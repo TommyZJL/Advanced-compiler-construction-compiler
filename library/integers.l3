@@ -71,7 +71,9 @@
 
 (defrec int-print
   (fun (i)
-       #u ;; TODO
+    (if (>= i 10)
+       (begin (int-print (/ i 10)) (char-print (int->char-digit (% i 10))))
+       (char-print (int->char-digit i)))
        ))
 
 (def int->char (fun (i) (@int->char i)))

@@ -121,14 +121,31 @@ object L3Parser extends TokenParsers {
 
   // Syntactic sugar translation.
 
-  private def sFun(args: List[String], body: Tree): Tree = ???
-  private def sLet_*(bdgs: List[(String,Tree)], body: Tree): Tree = ???
-  private def sBegin(exprs: List[Tree]): Tree = ???
-  private def sRec(name: String, bdgs: List[(String, Tree)], body: Tree) = ???
-  private def sAnd(e1: Tree, e2: Tree): Tree = ???
-  private def sOr(e1: Tree, e2: Tree): Tree = ???
-  private def sNot(e: Tree): Tree = ???
-  private def sCond(branches: List[(Tree, Tree)]): Tree = ???
+  private def sFun(args: List[String], body: Tree): Tree = {
+    val freshId = Symbol.fresh("sfun").name
+    LetRec(FunDef(freshId, args, body) :: Nil, Ident(freshId))
+  }
+  private def sLet_*(bdgs: List[(String,Tree)], body: Tree): Tree = bdgs match {
+    case x :: Nil => Let(bdgs, body)
+    case x :: xs => Let(x :: Nil, sLet_*(xs, body))
+  }
+  private def sBegin(exprs: List[Tree]): Tree = exprs match {
+    case x :: Nil => x
+    case x :: xs => Let((Symbol.fresh("sBegin").name, x) :: Nil, sBegin(xs))
+  }
+  private def sRec(name: String, bdgs: List[(String, Tree)], body: Tree) = {
+    LetRec(FunDef(name, bdgs.map(x => x._1), body) :: Nil, App(Ident(name), bdgs.map(x => x._2)))
+  }
+  private def sAnd(e1: Tree, e2: Tree): Tree = If(e1, e2, Lit(BooleanLit(false)))
+  private def sOr(e1: Tree, e2: Tree): Tree = {
+    val freshId = Symbol.fresh("sOr").name
+    Let((freshId, e1) :: Nil, If(Ident(freshId), Ident(freshId), e2))
+  }
+  private def sNot(e: Tree): Tree = If(e, Lit(BooleanLit(false)), Lit(BooleanLit(true)))
+  private def sCond(branches: List[(Tree, Tree)]): Tree = branches match {
+    case x :: Nil => If(x._1, x._2, Lit(UnitLit))
+    case x :: xs => If(x._1, x._2, sCond(xs))
+  }
 
   private def sStringLit(s: String): Tree = {
     val blockName = freshName("string")
