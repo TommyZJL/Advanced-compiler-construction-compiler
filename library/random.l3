@@ -1,0 +1,35 @@
+;; In Emacs, open this file in -*- Scheme -*- mode.
+
+;; An xorshift random number generator (see
+;; http://en.wikipedia.org/wiki/Xorshift).
+;;
+;; Notice that Xorshift generators suffer from pretty serious problems
+;; according to [1], but they will do for our purposes.
+;;
+;; [1] "On the Xorshift Random Number Generators", F. Panneton and P.
+;; L’Ecuyer
+
+(def rng-make
+     (fun (seed)
+          (let ((rng (@block-alloc-4 1)))
+            (@block-set! rng 0 seed)
+            rng)))
+
+(def %rng-get-state
+     (fun (rng) (@block-get rng 0)))
+
+(def %rng-set-state!
+     (fun (rng new-state) (@block-set! rng 0 new-state)))
+
+(def rng?
+     (fun (o)
+          (and (@block? o) (= (@block-tag o) 4))))
+
+(def rng-next-int
+     (fun (rng)
+          (let* ((c0 (%rng-get-state rng))
+                 (c1 (int-bitwise-xor c0 (int-arithmetic-shift c0 13)))
+                 (c2 (int-bitwise-xor c1 (int-arithmetic-shift c1 -17)))
+                 (c3 (int-bitwise-xor c2 (int-arithmetic-shift c2 5))))
+            (%rng-set-state! rng c3)
+            c3)))

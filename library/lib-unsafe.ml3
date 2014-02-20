@@ -1,0 +1,5 @@
+;; Main meta-module for the L₃ library, with run-time check disabled.
+;; For more safety (but less performance), use lib.ml3 instead.
+
+require-off.ml3
+core.ml3

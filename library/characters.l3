@@ -1,0 +1,30 @@
+;; In Emacs, open this file in -*- Scheme -*- mode
+
+;; Characters
+
+(def newline (@int->char 10))
+
+(def char? (fun (o) (@char? o)))
+
+(def char-read (fun () (@char-read)))
+(def char-print (fun (c) (@char-print c)))
+
+(def newline-print (fun () (char-print newline)))
+
+(def char->int (fun (c) (@char->int c)))
+
+(def char-digit?
+     (let ((int-0 (@char->int '0'))
+           (int-9 (@char->int '9')))
+       (fun (c)
+            (let ((int-c (@char->int c)))
+              (and (@<= int-0 int-c) (@<= int-c int-9))))))
+
+(def char-digit->int
+     (let ((int-0 (@char->int '0')))
+       (fun (c) (@- (@char->int c) int-0))))
+
+(def int->char-digit
+     (let ((int-0 (@char->int '0')))
+       (fun (i) (@int->char (@+ i int-0)))))
+

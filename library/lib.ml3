@@ -1,0 +1,9 @@
+;; Main meta-module for the L₃ library, with run-time check enabled.
+;; For more performance (but less safety), use lib-unsafe.ml3 instead.
+
+;; NOTE: for now, this module behaves exactly like lib-unsafe, because
+;; the halt primitive is still missing, and because requirements
+;; haven't been added to the library yet.
+
+require-off.ml3
+core.ml3

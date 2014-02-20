@@ -1,0 +1,49 @@
+;; In Emacs, open this file in -*- Scheme -*- mode.
+
+;; Vectors
+
+(def vector-make (fun (n) (@block-alloc-1 n)))
+
+(def vector?
+     (fun (o)
+          (and (@block? o) (= 1 (@block-tag o)))))
+
+(def vector-get (fun (v n) (@block-get v n)))
+
+(def vector-set! (fun (v n o) (@block-set! v n o)))
+
+(def vector-length (fun (v) (@block-length v)))
+
+(def vector-swap!
+     (fun (v i1 i2)
+          (let ((t (vector-get v i1)))
+            (vector-set! v i1 (vector-get v i2))
+            (vector-set! v i2 t))))
+
+(def vector-shuffle!
+     (fun (v rng-seed)
+          (let ((rng (rng-make rng-seed))
+                (l (vector-length v)))
+            (rec loop ((i 0))
+                 (if (< i (- l 1))
+                     (let ((j (+ i (int-abs (% (rng-next-int rng) (- l i))))))
+                       (vector-swap! v i j)
+                       (loop (+ i 1))))))))
+
+(def vector->list
+     (fun (v)
+          (rec loop ((i (- (vector-length v) 1)))
+               (if (= i -1)
+                   list-empty
+                   (list-prepend (vector-get v i) (loop (- i 1)))))))
+
+(def list->vector
+     (fun (l)
+          (let* ((n (list-length l))
+                 (v (vector-make n)))
+            (rec loop ((i 0) (l l))
+                 (if (< i n)
+                     (begin
+                       (vector-set! v i (list-head l))
+                       (loop (+ i 1) (list-tail l)))
+                     v)))))

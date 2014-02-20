@@ -1,0 +1,34 @@
+# macs...
+.DS_Store
+
+# compiler
+out.asm
+target
+project/target
+submit-me.jar
+
+# VM
+vm/*.d
+vm/*.o
+vm/bin
+
+# Eclipse
+.classpath
+.settings
+.project
+.cache
+bin/
+
+# for ol' times' sake
+tools
+notes.org
+notes.org_archive
+tests/drafts
+tests/course
+
+# assignment id
+.id
+
+# sublime text
+*.sublime-project
+*.sublime-workspace

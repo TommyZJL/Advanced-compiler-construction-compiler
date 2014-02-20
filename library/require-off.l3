@@ -1,0 +1,5 @@
+;; In Emacs, open this file in -*- Scheme -*- mode.
+
+(def require
+     (fun (condition message)
+          #u))                          ;do nothing

@@ -1,0 +1,18 @@
+;; In Emacs, open this file in -*- Scheme -*- mode.
+
+(def %require-string-print
+     ;; Independent version of string-print, to make sure this module
+     ;; doesn't have any dependency.
+     (fun (s)
+          (rec loop ((i 0))
+               (if (@< i (@block-length s))
+                   (begin
+                     (@char-print (@block-get s i))
+                     (loop (@+ i 1)))))))
+
+(def require
+     (fun (condition message)
+          (if (not condition)
+              (begin
+                (%require-string-print message)
+                (@halt)))))
