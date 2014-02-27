@@ -121,15 +121,27 @@ object L3Parser extends TokenParsers {
 
   // Syntactic sugar translation.
 
-  private def sFun(args: List[String], body: Tree): Tree = ???
-  private def sLet_*(bdgs: List[(String,Tree)], body: Tree): Tree = ???
-  private def sBegin(exprs: List[Tree]): Tree = ???
-  private def sRec(name: String, bdgs: List[(String, Tree)], body: Tree) = ???
-  private def sAnd(e1: Tree, e2: Tree): Tree = ???
-  private def sOr(e1: Tree, e2: Tree): Tree = ???
-  private def sNot(e: Tree): Tree = ???
-  private def sCond(branches: List[(Tree, Tree)]): Tree = ???
-
+  private def sFun(args: List[String], body: Tree): Tree = {
+    val fName = freshName("fun")
+    LetRec(List(FunDef(fName, args, body)), Ident(fName))
+  }
+  private def sLet_*(bdgs: List[(String,Tree)], body: Tree): Tree =
+    (bdgs :\ body)( (b, t) => Let(List(b), t))
+  private def sBegin(exprs: List[Tree]): Tree =
+    exprs reduceRight { (e1, e2) => Let(List((freshName("begin"), e1)), e2) }
+  private def sRec(name: String, bdgs: List[(String, Tree)], body: Tree) =
+    LetRec(List(FunDef(name, bdgs map { _._1 }, body)),
+           App(Ident(name), bdgs map { _._2 }))
+  private def sAnd(e1: Tree, e2: Tree): Tree =
+    If(e1, e2, Lit(BooleanLit(false)))
+  private def sOr(e1: Tree, e2: Tree): Tree = {
+    val v1Name = freshName("or")
+    Let(List((v1Name, e1)), If(Ident(v1Name), Ident(v1Name), e2))
+  }
+  private def sNot(e: Tree): Tree =
+    If(e, Lit(BooleanLit(false)), Lit(BooleanLit(true)))
+  private def sCond(branches: List[(Tree, Tree)]): Tree =
+    (branches :\ (Lit(UnitLit) : Tree)){ case ((c, t), e) => If(c, t, e) }
   private def sStringLit(s: String): Tree = {
     val blockName = freshName("string")
     Let(List((blockName, Prim("block-alloc-"+ BlockTag.String.id,
