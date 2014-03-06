@@ -10,13 +10,66 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
 
   private def nonTail(tree: S.Tree, ctx: Symbol => C.Tree): C.Tree =
     tree match {
+    
+      case S.Ident(name) => ctx(name)
+      case S.Lit(lit) => {
+        val n = Symbol.fresh("n")
+        C.LetL(n, lit, ctx(n))
+      }
+      
       case S.Let((name, value) :: rest, body) =>
         tempLetC("lc", List(name), nonTail(S.Let(rest, body), ctx)) { lc =>
           tail(value, lc) }
 
       case S.Let(List(), body) =>
         nonTail(body, ctx)
-
+        
+      case S.LetRec(functions, body) =>
+        C.LetF(functions.map(f => {
+          val c = Symbol.fresh("c")
+          C.FunDef(f.name, c, f.args, tail(f.body, c))
+        }), nonTail(body, ctx))
+        
+      case S.App(f, args) => {
+        val (c, r) = (Symbol.fresh("c"), Symbol.fresh("r"))
+        nonTail_*(args, l => C.LetC(List(C.CntDef(c, List(r), ctx(r))), C.AppF(l.head, c, l.tail)))
+      }
+      
+      case S.Prim(name, args) if name.isInstanceOf[L3TestPrimitive] => 
+        nonTail(S.If(tree, S.Lit(BooleanLit(true)), S.Lit(BooleanLit(false))), ctx)
+      
+      
+      // if may not be necassary
+      case S.Prim(name, args)  if name.isInstanceOf[L3ValuePrimitive] => {
+        val n = Symbol.fresh("n")
+        nonTail_*(args, l => C.LetP(n, name.asInstanceOf[L3ValuePrimitive], l, ctx(n)))
+      }
+      
+      case S.If(prim @ S.Prim(name, args), e2, e3) if name.isInstanceOf[L3TestPrimitive] => {
+        val r = Symbol.fresh("r")
+        tempLetC("lc", List(r), ctx(r)) {
+          lc => tempLetC("lct", List(), tail(e2, lc)) {
+            lct => tempLetC("lcf", List(), tail(e3, lc)) {
+              lcf => nonTail_*(args, l => C.If(name.asInstanceOf[L3TestPrimitive], l, lct, lcf))
+            }
+          }
+        }
+      }
+      
+      case S.If(e1, e2, e3) => {
+        val r = Symbol.fresh("r")
+        tempLetC("lc", List(r), ctx(r)) {
+          lc => tempLetC("lct", List(), tail(e2, lc)) {
+            lct => tempLetC("lcf", List(), tail(e3, lc)) {
+              lcf => {
+                val f = Symbol.fresh("f")
+                C.LetL(f, BooleanLit(false), nonTail(e1, v => C.If(L3Ne, List(v, f), lct, lcf)))
+              }
+            }
+          }
+        }
+      }
+      
       // TODO
 
     }
