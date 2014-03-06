@@ -4,6 +4,7 @@ import java.nio.file.Path
 import l3.input.{ FileReader, SeqReader }
 import scala.util.parsing.input.{ StreamReader, CharSequenceReader }
 import CL3TreeFormatter._
+import CPSTreeFormatter._
 
 object Main extends MainHelper {
 
@@ -16,9 +17,11 @@ object Main extends MainHelper {
       L3Parser.program(new L3Scanner.Scanner(inReader)) match {
         case L3Parser.Success(program, _) =>
           val backEnd = (
-            treePrinter("Tree after desugaring")(NominalCL3TreeFormatter)
-              andThen CL3NameAnalyzer
-              andThen CL3Interpreter
+            CL3NameAnalyzer
+              andThen treePrinter("Tree in CL3")
+              andThen CL3ToCPSTranslator
+              andThen treePrinter("Tree in CPS")
+              andThen CPSInterpreterHigh
           )
           backEnd(program)
         case failure @ L3Parser.NoSuccess(_, _) =>
