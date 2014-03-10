@@ -100,6 +100,14 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
       case S.Let(List(), body) =>
         tail(body, c)
       
+      case S.Lit(lit) => {
+        val l = Symbol.fresh("l")
+        C.LetL(l, lit, C.AppC(c, List(l)))
+      }
+      // Why ?
+      case S.App(S.Ident(f), List()) =>
+        C.AppF(f, c, List())
+      //case S.App(S.Ident(f), x :: xs) => ???
       // TODO
 
     }
