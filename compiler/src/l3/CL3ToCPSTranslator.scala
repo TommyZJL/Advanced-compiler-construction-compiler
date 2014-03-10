@@ -56,7 +56,7 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
         }
       }
       
-      case S.If(e1, e2, e3) => {
+      /*case S.If(e1, e2, e3) => {
         val r = Symbol.fresh("r")
         tempLetC("lc", List(r), ctx(r)) {
           lc => tempLetC("lct", List(), tail(e2, lc)) {
@@ -68,10 +68,18 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
             }
           }
         }
-      }
+      }*/
       
-      // TODO
-
+      case S.If(e1, e2, e3) => {
+        val r = Symbol.fresh("r")
+        tempLetC("lc", List(r), ctx(r)) {
+          lc => tempLetC("lct", List(), tail(e2, lc)) {
+            lct => tempLetC("lcf", List(), tail(e3, lc)) {
+              lcf => cond(e1, lct, lcf)
+            }
+          }
+        }
+      }
     }
 
   private def nonTail_*(trees: List[S.Tree], ctx: List[Symbol] => C.Tree)
@@ -91,7 +99,7 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
 
       case S.Let(List(), body) =>
         tail(body, c)
-
+      
       // TODO
 
     }
@@ -103,12 +111,32 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
 
       case S.If(condE, S.Lit(BooleanLit(false)), S.Lit(BooleanLit(true))) =>
         cond(condE, falseC, trueC)
-
-      // TODO
-
+      
+      /* From here... */
+      case S.If(condE, e2, S.Lit(BooleanLit(true))) =>
+        tempLetC("ac", List(), cond(e2, trueC, falseC)) {
+          ac => cond(condE, ac, trueC)
+        }
+      
+      case S.If(condE, e2, S.Lit(BooleanLit(false))) =>
+        tempLetC("ac", List(), cond(e2, trueC, falseC)) {
+          ac => cond(condE, ac, falseC)
+        }
+      
+      case S.If(condE, S.Lit(BooleanLit(true)), e3) =>
+        tempLetC("ac", List(), cond(e3, trueC, falseC)) {
+          ac => cond(condE, trueC, ac)
+        }
+      
+      case S.If(condE, S.Lit(BooleanLit(false)), e3) =>
+        tempLetC("ac", List(), cond(e3, trueC, falseC)) {
+          ac => cond(condE, falseC, ac)
+        }
+      /* ...to here, I'm not sure of what I did, all the other stuff was already there */
+        
       case S.Prim(p: L3TestPrimitive, args) =>
         nonTail_*(args, as => C.If(p, as, trueC, falseC))
-
+      
       case other =>
         nonTail(other, o =>
           nonTail(S.Lit(BooleanLit(false)), n =>
