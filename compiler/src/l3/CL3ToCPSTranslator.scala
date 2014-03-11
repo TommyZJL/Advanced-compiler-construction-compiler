@@ -24,17 +24,23 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
       case S.Let(List(), body) =>
         nonTail(body, ctx)
         
-      case S.LetRec(functions, body) =>
+      case S.LetRec(functions, body) => {
         C.LetF(functions.map(f => {
           val c = Symbol.fresh("c")
           C.FunDef(f.name, c, f.args, tail(f.body, c))
         }), nonTail(body, ctx))
+      }
         
       case S.App(f, args) => {
         val (c, r) = (Symbol.fresh("c"), Symbol.fresh("r"))
-        nonTail_*(args, l => C.LetC(List(C.CntDef(c, List(r), ctx(r))), C.AppF(l.head, c, l.tail)))
+        nonTail_*(f :: args, l => C.LetC(List(C.CntDef(c, List(r), ctx(r))), C.AppF(l.head, c, l.tail)))
       }
       
+      /*case S.App(f, args) => {
+        val (c, r) = (Symbol.fresh("c"), Symbol.fresh("r"))
+        nonTail_*(f :: args, l => C.LetC(List(C.CntDef(c, List(r), ctx(r))), C.AppF(l.head, c, l.tail)))
+      }*/
+        
       case S.Prim(name, args) if name.isInstanceOf[L3TestPrimitive] => 
         nonTail(S.If(tree, S.Lit(BooleanLit(true)), S.Lit(BooleanLit(false))), ctx)
       
@@ -45,7 +51,7 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
         nonTail_*(args, l => C.LetP(n, name.asInstanceOf[L3ValuePrimitive], l, ctx(n)))
       }
       
-      case S.If(prim @ S.Prim(name, args), e2, e3) if name.isInstanceOf[L3TestPrimitive] => {
+      /*case S.If(prim @ S.Prim(name, args), e2, e3) if name.isInstanceOf[L3TestPrimitive] => {
         val r = Symbol.fresh("r")
         tempLetC("lc", List(r), ctx(r)) {
           lc => tempLetC("lct", List(), tail(e2, lc)) {
@@ -56,7 +62,7 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
         }
       }
       
-      /*case S.If(e1, e2, e3) => {
+      case S.If(e1, e2, e3) => {
         val r = Symbol.fresh("r")
         tempLetC("lc", List(r), ctx(r)) {
           lc => tempLetC("lct", List(), tail(e2, lc)) {
@@ -94,12 +100,15 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
   private def tail(tree: S.Tree, c: Symbol): C.Tree =
     tree match {
       case S.Let((name, value) :: rest, body) =>
-        tempLetC("lc", List(name), tail(S.Let(rest, body), c)) { lc =>
-          tail(value, lc) }
+        tempLetC("lc", List(name), tail(S.Let(rest, body), c)) { 
+          lc => tail(value, lc) 
+        }
 
       case S.Let(List(), body) =>
         tail(body, c)
       
+      case S.Ident(name) => C.AppC(c, List(name))
+        
       case S.Lit(lit) => {
         val l = Symbol.fresh("l")
         C.LetL(l, lit, C.AppC(c, List(l)))
@@ -109,36 +118,29 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
         C.LetF(functions.map(f => {
           val c = Symbol.fresh("c")
           C.FunDef(f.name, c, f.args, tail(f.body, c))
-        }), nonTail(body, ctx))
+        }), tail(body, c))
       
-      // Why ?
-      case S.App(S.Ident(f), l) =>
-        nonTail_*(l, list => C.AppF(f, c, list))
+      case S.App(f, l) =>
+        nonTail_*(f :: l, list => C.AppF(list.head, c, list.tail))
         
-      case S.Prim(name, args) if name.isInstanceOf[L3TestPrimitive] => 
-        nonTail(S.If(tree, S.Lit(BooleanLit(true)), S.Lit(BooleanLit(false))), ctx)
+      case S.Prim(name: L3TestPrimitive, args) => 
+        tail(S.If(tree, S.Lit(BooleanLit(true)), S.Lit(BooleanLit(false))), c)
       
-      // if may not be necassary
-      case S.Prim(name, args)  if name.isInstanceOf[L3ValuePrimitive] => {
+      case S.Prim(name: L3ValuePrimitive, args) => {
         val n = Symbol.fresh("n")
-        nonTail_*(args, l => C.LetP(n, name.asInstanceOf[L3ValuePrimitive], l, ctx(n)))
+        nonTail_*(args, l => C.LetP(n, name, l, C.AppC(c, List(n))))
       }
       
-      case S.If(prim @ S.Prim(name, args), e2, e3) if name.isInstanceOf[L3TestPrimitive] => {
-        val r = Symbol.fresh("r")
-        tempLetC("lc", List(r), ctx(r)) {
-          lc => tempLetC("lct", List(), tail(e2, lc)) {
-            lct => tempLetC("lcf", List(), tail(e3, lc)) {
-              lcf => nonTail_*(args, l => C.If(name.asInstanceOf[L3TestPrimitive], l, lct, lcf))
-            }
+      case S.If(e1, e2, e3) => {
+        tempLetC("lct", List(), tail(e2, c)) {
+          lct => tempLetC("lcf", List(), tail(e3, c)) {
+            lcf => cond(e1, lct, lcf)
           }
         }
       }
       
-      case tr => 
-        nonTail(tr, t => C.AppF(t, c, List()))
-      // TODO
-
+      case _ => 
+        nonTail(tree, t => C.AppC(c, List(t)))
     }
 
   private def cond(tree: S.Tree, trueC: Symbol, falseC: Symbol): C.Tree =
