@@ -105,9 +105,11 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
         C.LetL(l, lit, C.AppC(c, List(l)))
       }
       // Why ?
-      case S.App(S.Ident(f), List()) =>
-        C.AppF(f, c, List())
-      //case S.App(S.Ident(f), x :: xs) => ???
+      case S.App(S.Ident(f), l) =>
+        nonTail_*(l, list => C.AppF(f, c, list))
+        
+      case tr => 
+        nonTail(tr, t => C.AppF(t, c, List()))
       // TODO
 
     }

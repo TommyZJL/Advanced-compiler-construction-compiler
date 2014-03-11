@@ -17,6 +17,14 @@ class CL3ToCPS_Whitebox extends CPSHighTest {
     testCPSHighTreeEquality("(letrec ((f (fun (g) (g)))) f)", "(let ((v$1 (fun (v$2 v$3) (v$3 v$2)))) (halt))")
     
   @Test def testTailLetRec2 =
-    testCPSHighTreeEquality("(letrec ((f (fun (g) (g 2)))) f)", "(let ((v$1 (fun (v$2 v$3) (v$3 v$2)))) (halt))")
-  // TODO: Add more tests
+    testCPSHighTreeEquality("(letrec ((f (fun (g) (g 2)))) f)", "(let ((v$1 (fun (v$2 v$3) (let ((v$4 2)) (v$3 v$2 v$4))))) (halt))")
+  
+  @Test def testGCD = {
+    testCPSHighTreeEquality("(rec loop ((x 2016) (y 714)) (if (@= 0 y) (@char-print 'A') (loop y (@% x y))))",
+        "(letc ((loop (cnt (x y) (let* ((ct (cnt () (appf print x))) (cf (cnt () (letp ((t (% x y))) (appc loop y t)))) (z 0)) (if (= y z) ct cf))))) (let* ((x 2016) (y 714)) (appc loop x y)))")
+  }
+    
+    
+    // TODO: Add more tests
+    
 }
