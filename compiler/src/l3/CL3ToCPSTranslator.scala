@@ -104,10 +104,37 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
         val l = Symbol.fresh("l")
         C.LetL(l, lit, C.AppC(c, List(l)))
       }
+        
+      case S.LetRec(functions, body) =>
+        C.LetF(functions.map(f => {
+          val c = Symbol.fresh("c")
+          C.FunDef(f.name, c, f.args, tail(f.body, c))
+        }), nonTail(body, ctx))
+      
       // Why ?
       case S.App(S.Ident(f), l) =>
         nonTail_*(l, list => C.AppF(f, c, list))
         
+      case S.Prim(name, args) if name.isInstanceOf[L3TestPrimitive] => 
+        nonTail(S.If(tree, S.Lit(BooleanLit(true)), S.Lit(BooleanLit(false))), ctx)
+      
+      // if may not be necassary
+      case S.Prim(name, args)  if name.isInstanceOf[L3ValuePrimitive] => {
+        val n = Symbol.fresh("n")
+        nonTail_*(args, l => C.LetP(n, name.asInstanceOf[L3ValuePrimitive], l, ctx(n)))
+      }
+      
+      case S.If(prim @ S.Prim(name, args), e2, e3) if name.isInstanceOf[L3TestPrimitive] => {
+        val r = Symbol.fresh("r")
+        tempLetC("lc", List(r), ctx(r)) {
+          lc => tempLetC("lct", List(), tail(e2, lc)) {
+            lct => tempLetC("lcf", List(), tail(e3, lc)) {
+              lcf => nonTail_*(args, l => C.If(name.asInstanceOf[L3TestPrimitive], l, lct, lcf))
+            }
+          }
+        }
+      }
+      
       case tr => 
         nonTail(tr, t => C.AppF(t, c, List()))
       // TODO
@@ -123,6 +150,12 @@ object CL3ToCPSTranslator extends (S.Tree => C.Tree) {
         cond(condE, falseC, trueC)
       
       /* From here... */
+      case S.If(condE, S.Lit(BooleanLit(true)), S.Lit(BooleanLit(true))) =>
+        cond(condE, trueC, trueC)
+
+      case S.If(condE, S.Lit(BooleanLit(false)), S.Lit(BooleanLit(false))) =>
+        cond(condE, falseC, falseC)
+        
       case S.If(condE, e2, S.Lit(BooleanLit(true))) =>
         tempLetC("ac", List(), cond(e2, trueC, falseC)) {
           ac => cond(condE, ac, trueC)
