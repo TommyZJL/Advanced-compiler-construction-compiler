@@ -26,9 +26,135 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
       tempLetP(CPSAdd, args) { r =>
         tempLetL(1) { c1 =>
           L.LetP(name, CPSSub, List(r, c1), transform(body)) } }
-
+    
+    case H.LetP(name, L3IntSub, args, body) =>
+      tempLetP(CPSSub, args) { r =>
+        tempLetL(1) { c1 =>
+          L.LetP(name, CPSAdd, List(r, c1), transform(body)) }}
+    
+    case H.LetP(name, L3IntMul, args, body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSSub, List(args(0), c1)) { r1 =>
+          tempLetP(CPSArithShiftR, List(args(1), c1)) { r2 => 
+            tempLetP(CPSMul, List(r1, r2)) { r =>
+              L.LetP(name, CPSAdd, List(r, c1), transform(body)) }}}}
+    
+    case H.LetP(name, L3IntDiv, args, body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSSub, List(args(0), c1)) { r1 =>
+          tempLetP(CPSSub, List(args(1), c1)) { r2 => 
+            tempLetP(CPSDiv, List(r1, r2)) { r3 =>
+              tempLetL(2) { c2 => 
+                tempLetP(CPSMul, List(r3, c2)) { r => 
+                  L.LetP(name, CPSAdd, List(r, c1), transform(body)) }}}}}}
+    
+    case H.LetP(name, L3IntMod, args, body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSSub, List(args(0), c1)) { r1 =>
+          tempLetP(CPSSub, List(args(1), c1)) { r2 => 
+            tempLetP(CPSMod, List(r1, r2)) { r =>
+              L.LetP(name, CPSAdd, List(r, c1), transform(body)) }}}}
+    
+    case H.LetP(name, L3IntArithShiftRight, args, body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSSub, List(args(0), c1)) { r1 =>
+          tempLetP(CPSSub, List(args(1), c1)) { r2 => 
+            tempLetP(CPSArithShiftR, List(r2, c1)) { r3 =>
+              tempLetP(CPSArithShiftR, List(r1, r3)) { r =>
+                L.LetP(name, CPSAdd, List(r, c1), transform(body)) }}}}}
+    
+    case H.LetP(name, L3IntArithShiftLeft, args, body) =>
+      tempLetL(1) { c1 =>
+        tempLetP(CPSSub, List(args(0), c1)) { r1 =>
+          tempLetP(CPSSub, List(args(1), c1)) { r2 => 
+            tempLetP(CPSArithShiftR, List(r2, c1)) { r3 =>
+              tempLetP(CPSArithShiftL, List(r1, r3)) { r =>
+                L.LetP(name, CPSAdd, List(r, c1), transform(body)) }}}}}
+      
+    case H.LetP(name, L3IntBitwiseAnd, args, body) =>
+      L.LetP(name, CPSAnd, List(args(0), args(1)), transform(body))
+    
+    case H.LetP(name, L3IntBitwiseOr, args, body) =>
+      L.LetP(name, CPSOr, List(args(0), args(1)), transform(body))
+      
+    case H.LetP(name, L3IntBitwiseXOr, args, body) =>
+      tempLetP(CPSXOr, List(args(0), args(1))) { r =>
+        tempLetL(1) { c1 => 
+          L.LetP(name, CPSOr, List(r, c1), transform(body)) }}
+      
+    case H.LetF(functions, body) =>
+      L.LetF(functions.map(f => 
+        L.FunDef(f.name, f.retC, f.args, transform(f.body))),
+        transform(body)
+      )
+      
+    // Casts
+    case H.LetP(name, L3IntToChar, List(a), body) =>
+      tempLetL(2) { c2 => 
+        tempLetP(CPSArithShiftL, List(a, c2)) { r => 
+          L.LetP(name, CPSAdd, List(r, c2), transform(body)) }}
+    
+    case H.LetP(name, L3CharToInt, List(a), body) =>
+      tempLetL(2) { c2 => 
+        L.LetP(name, CPSArithShiftR, List(a, c2), transform(body)) }
+      
+    // Char print
+    case H.LetP(name, L3CharPrint, List(a), body) =>
+      tempLetL(3) { c3 => 
+        tempLetP(CPSArithShiftR, List(a, c3)) { r => 
+          L.LetP(name, CPSCharPrint, List(r), transform(body)) }}
+    
+    // Block primitives
+    case H.LetP(name, L3BlockAlloc(tag), List(a), body) =>
+      tempLetL(1) { c1 => 
+        tempLetP(CPSArithShiftR, List(a, c1)) { r => 
+          L.LetP(name, CPSBlockAlloc(tag), List(r), transform(body)) }}
+      
+    case H.LetP(name, L3BlockTag, List(a), body) =>
+      tempLetP(CPSBlockTag, List(a)) { r1 => 
+        tempLetL(1) { c1 => 
+          tempLetP(CPSArithShiftL, List(r1, c1)) { r2 => 
+            L.LetP(name, CPSAdd, List(r2, c1), transform(body)) }}}
+        
+    case H.LetP(name, L3BlockLength, List(a), body) =>
+      tempLetP(CPSBlockSize, List(a)) { r1 => 
+        tempLetL(1) { c1 => 
+          tempLetP(CPSArithShiftL, List(r1, c1)) { r2 => 
+            L.LetP(name, CPSAdd, List(r2, c1), transform(body)) }}}
+      
+    case H.LetP(name, L3BlockGet, List(b, n), body) =>
+      tempLetL(1) { c1 => 
+        tempLetP(CPSArithShiftR, List(n, c1)) { r => 
+          L.LetP(name, CPSBlockGet, List(b, r), transform(body)) }}
+      
+    case H.LetP(name, L3BlockSet, List(b, n, v), body) =>
+      tempLetL(1) { c1 => 
+        tempLetP(CPSArithShiftR, List(n, c1)) { r => 
+          L.LetP(name, CPSBlockSet, List(b, r, v), transform(body)) }}
+      
+    case H.If(L3IntLt, args, thenC, elseC) =>
+      L.If(CPSLt, args, thenC, elseC)
+    case H.If(L3IntLe, args, thenC, elseC) =>
+      L.If(CPSLe, args, thenC, elseC)
+    case H.If(L3IntGt, args, thenC, elseC) =>
+      L.If(CPSGt, args, thenC, elseC)
+    case H.If(L3IntGe, args, thenC, elseC) =>
+      L.If(CPSGe, args, thenC, elseC)
+    case H.If(L3Eq, args, thenC, elseC) =>
+      L.If(CPSEq, args, thenC, elseC)
+    case H.If(L3Ne, args, thenC, elseC) =>
+      L.If(CPSNe, args, thenC, elseC)
+      
     case H.If(L3IntP, List(a), thenC, elseC) =>
       ifEqLSB(a, List(1), thenC, elseC)
+    case H.If(L3BlockP, List(a), thenC, elseC) =>
+      ifEqLSB(a, List(0, 0), thenC, elseC)
+    case H.If(L3CharP, List(a), thenC, elseC) =>
+      ifEqLSB(a, List(1, 1, 0), thenC, elseC)
+    case H.If(L3BoolP, List(a), thenC, elseC) =>
+      ifEqLSB(a, List(1, 0, 1, 0), thenC, elseC)
+    case H.If(L3UnitP, List(a), thenC, elseC) =>
+      ifEqLSB(a, List(0, 0, 1, 0), thenC, elseC)
 
     //TODO: handle other cases
   }
