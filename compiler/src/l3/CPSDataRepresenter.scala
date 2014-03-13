@@ -18,10 +18,17 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
     transform(tree)
 
   private def transform(tree: H.Tree) : L.Tree = tree match {
-
+    // Literals
+    case H.LetL(name, IntLit(value), body) =>
+      L.LetL(name, (value << 1) | bitsToIntMSBF(1), transform(body))
     case H.LetL(name, CharLit(value), body) =>
       L.LetL(name, (value << 3) | bitsToIntMSBF(1, 1, 0), transform(body))
-
+    case H.LetL(name, BooleanLit(value), body) =>
+      L.LetL(name, bitsToIntMSBF((if (value) 1 else 0), 1, 0, 1, 0), transform(body))
+    case H.LetL(name, UnitLit, body) =>
+      L.LetL(name, bitsToIntMSBF(0, 0, 1, 0), transform(body))
+     
+      
     case H.LetP(name, L3IntAdd, args, body) =>
       tempLetP(CPSAdd, args) { r =>
         tempLetL(1) { c1 =>
@@ -155,7 +162,8 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
       ifEqLSB(a, List(1, 0, 1, 0), thenC, elseC)
     case H.If(L3UnitP, List(a), thenC, elseC) =>
       ifEqLSB(a, List(0, 0, 1, 0), thenC, elseC)
-
+    
+    case H.Halt => L.Halt
     //TODO: handle other cases
   }
 

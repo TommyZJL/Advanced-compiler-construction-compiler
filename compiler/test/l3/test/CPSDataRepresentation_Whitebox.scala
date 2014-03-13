@@ -11,7 +11,7 @@ class CPSDataRepresentation_Whitebox_Cond extends CPSLowTest {
   // correctness, but from now on it's up to you to find the best translation.
 
   // Nevertheless, here's a test, to have an example:
-  //@Test def testDataReprOnePlusTwo =
-  //  testCPSLowTreeEquality("(@ + 1 2)",
-  //    "(let () (let* ((v$1 3) (v$2 5) (v$3 (+ v$1 v$2)) (v$4 1) (v$5 (- v$3 v$4))) (halt)))")
+  @Test def testDataReprOnePlusTwo =
+    testCPSLowTreeEquality("(@ + 1 2)",
+      "(let () (let* ((v$1 3) (v$2 5) (v$3 (+ v$1 v$2)) (v$4 1) (v$5 (- v$3 v$4))) (halt)))")
 }
