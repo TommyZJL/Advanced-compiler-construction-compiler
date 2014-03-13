@@ -12,17 +12,17 @@ object Main extends MainHelper {
     try {
       val fs = java.nio.file.FileSystems.getDefault
       val inFiles = expandModules(fs.getPath(""), args.toList).distinct
-      val inReader = SeqReader(inFiles map { f => FileReader(f.toString) } : _*)
+      val inReader = SeqReader(inFiles map { f => FileReader(f.toString) }: _*)
 
       L3Parser.program(new L3Scanner.Scanner(inReader)) match {
         case L3Parser.Success(program, _) =>
           val backEnd = (
             CL3NameAnalyzer
-              andThen treePrinter("Tree in CL3")
-              andThen CL3ToCPSTranslator
-              andThen treePrinter("Tree in CPS")
-              andThen CPSInterpreterHigh
-          )
+            andThen treePrinter("Tree in CL3")
+            andThen CL3ToCPSTranslator
+            andThen treePrinter("Tree in CPS")
+            andThen CPSDataRepresenter
+            andThen CPSInterpreterLow)
           backEnd(program)
         case failure @ L3Parser.NoSuccess(_, _) =>
           Console.println(failure)
@@ -52,9 +52,9 @@ trait MainHelper {
       val moduleReader = new BufferedReader(new FileReader(modulePath.toFile))
       val moduleContents = (
         Iterator.continually(moduleReader.readLine)
-          takeWhile (_ != null)
-          map (_.trim)
-          filterNot { s => (s startsWith ";") || s.isEmpty }).toList
+        takeWhile (_ != null)
+        map (_.trim)
+        filterNot { s => (s startsWith ";") || s.isEmpty }).toList
       moduleReader.close()
       moduleContents
     }
@@ -69,7 +69,7 @@ trait MainHelper {
     }
   }
 
-  protected def passThrough[T](f: T => Unit): T=>T = { t: T => f(t); t }
+  protected def passThrough[T](f: T => Unit): T => T = { t: T => f(t); t }
 
   protected def seqPrinter[T](msg: String): Seq[T] => Seq[T] =
     passThrough { program =>
