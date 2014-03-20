@@ -16,6 +16,16 @@ import l3.{ SymbolicCPSTreeModuleLow => L }
 object CPSDataRepresenter extends (H.Tree => L.Tree) {
   def apply(tree: H.Tree): L.Tree =
     transform(tree)
+    
+  private def freeVars(tree: H.Tree): List[H.Name] = tree match {
+    case H.LetL(name, value, body) => freeVars(body).filter(_ != name)
+    case H.LetP(name, prim, args, body) => freeVars(body).filter(_ != name) ::: args
+    case H.LetC(continuations, body) => freeVars(body) ::: continuations.flatMap(c => freeVars(c.body).diff(c.args))
+    case H.LetF(functions, body) => freeVars(body) ::: functions.flatMap(f => freeVars(f.body).diff(f.args)).diff(functions.map(f => f.name))
+    case H.AppC(cont, args) => args
+    case H.AppF(func, cont, args) => func :: args
+    case H.If(prim, args, thenC, elseC) => args
+  }
 
   private def transform(tree: H.Tree) : L.Tree = tree match {
     // Literals
@@ -89,11 +99,29 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
         tempLetL(1) { c1 => 
           L.LetP(name, CPSOr, List(r, c1), transform(body)) }}
       
-    case H.LetF(functions, body) =>
-      L.LetF(functions.map(f => 
+    case H.LetF(functions, body) => {
+      val letf = functions.map(f => {
+        val w = Symbol.fresh("w")
+        val env = Symbol.fresh("env")
+        val fv = freeVars(f.body)
+        val consts = fv.zipWithIndex.map(x => (Symbol.fresh("c"), x._2+1))
+        val freeVarsName = fv.map(x => Symbol.fresh("v"))
+        val freeVarsBody = fv.zip(consts).map(x => (CPSBlockGet, List(env, x._1)))
+        (w,
+        L.FunDef(w, f.retC, env :: f.args, 
+          LetL_*((Symbol.fresh("czero"), 0) :: consts)(
+            LetP_*(freeVarsName, freeVarsBody)(
+              transform(f.body.subst(PartialFunction[L.Name, L.Name] {
+                case x if x == f.name => env
+                case x if fv.contains(x) => fv.zip(freeVarsName).filter(_._1 == x)(0)._2
+              }))))))
+      })
+      null
+    }
+      /*L.LetF(functions.map(f => 
         L.FunDef(f.name, f.retC, f.args, transform(f.body))),
         transform(body)
-      )
+      )*/
       
     // Casts
     case H.LetP(name, L3IntToChar, List(a), body) =>
@@ -166,7 +194,23 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
     case H.Halt => L.Halt
     //TODO: handle other cases
   }
-
+  
+  private def LetL_*(vars: List[(L.Name, Int)])(body: L.Tree): L.Tree = 
+    vars match {
+      case Nil =>
+        body
+      case (c, v) :: vs =>
+        L.LetL(c, v, LetL_*(vs)(body))
+    }
+  
+  private def LetP_*(vars: List[L.Name], varsBody: List[(CPSValuePrimitive, List[L.Name])])(body: L.Tree): L.Tree = 
+    (vars, varsBody) match {
+      case (Nil, Nil) =>
+        body
+      case (v :: vs, (prim, args) :: vbs) =>
+        L.LetP(v, prim, args, LetP_*(vs, vbs)(body))
+    }
+  
   // Tree builders
 
   /**

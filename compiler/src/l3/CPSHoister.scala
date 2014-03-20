@@ -10,7 +10,20 @@ object CPSHoister extends (Tree => Tree) {
     case LetL(name, value, body) =>
       val LetF(funs, hBody) = hoist(body)
       LetF(funs, LetL(name, value, hBody))
-
+    
+    case LetF(functions, body) => ???
+    
+    case LetP(name, prim, args, tree) => ???
+    
+    case LetC(continuations, body) => ???
+    
+    case AppC(cont, args) => ???
+    
+    case AppF(func, retC, args) => ???
+    
+    case If(prim, args, thenC, elseC) => ???
+    
+    case Halt => ???
     //TODO: handle other cases
   }
 
