@@ -22,6 +22,7 @@ object Main extends MainHelper {
             andThen CL3ToCPSTranslator
             andThen treePrinter("Tree in CPS")
             andThen CPSDataRepresenter
+            andThen CPSHoister
             andThen CPSInterpreterLow)
           backEnd(program)
         case failure @ L3Parser.NoSuccess(_, _) =>
