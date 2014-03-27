@@ -13,7 +13,7 @@ object CPSHoister extends (Tree => Tree) {
     
     case LetF(functions, body) => 
       val LetF(funs, hBody) = hoist(body)
-      LetF(funs ::: functions.flatMap(hoistF(_)), hBody)
+      LetF(functions.flatMap(hoistF(_)) ::: funs, hBody)
     
     case LetP(name, prim, args, body) => 
       val LetF(funs, hBody) = hoist(body)

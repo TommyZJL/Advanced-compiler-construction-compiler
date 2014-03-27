@@ -14,14 +14,14 @@ import l3.{ SymbolicCPSTreeModuleLow => L }
  */
 
 object CPSDataRepresenter extends (H.Tree => L.Tree) {
-  def apply(tree: H.Tree): L.Tree =
+  def apply(tree: H.Tree): L.Tree = 
     transform(tree)
     
   private def freeVars(tree: H.Tree): List[H.Name] = tree match {
     case H.LetL(name, value, body) => freeVars(body).filter(_ != name)
     case H.LetP(name, prim, args, body) => freeVars(body).filter(_ != name) ::: args
     case H.LetC(continuations, body) => freeVars(body) ::: continuations.flatMap(c => freeVars(c.body).diff(c.args))
-    case H.LetF(functions, body) => freeVars(body) ::: functions.flatMap(f => freeVars(f.body).diff(f.args)).diff(functions.map(f => f.name))
+    case H.LetF(functions, body) => (freeVars(body) ::: functions.flatMap(f => freeVars(f.body).diff(f.args))).diff(functions.map(f => f.name))
     case H.AppC(cont, args) => args
     case H.AppF(func, cont, args) => func :: args
     case H.If(prim, args, thenC, elseC) => args
@@ -114,10 +114,20 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
       var pBindings: List[(L.Name, CPSValuePrimitive, List[L.Name])] = Nil
       
       val funDefs = functions.map(f => {
+        var innerConsts: List[(L.Name, Int)] = Nil
+        def getInnerConst(i: Int): L.Name = innerConsts.filter(_._2 == i) match {
+          case x :: Nil => x._1
+          case Nil => {
+            val c = Symbol.fresh("ci")
+            innerConsts ::= (c, i)
+            c
+          }
+        }
+        
         val w = Symbol.fresh("w")
         val env = Symbol.fresh("env")
-        val fv = freeVars(f.body)
-        val fvBindings = fv.zipWithIndex.map(x => (Symbol.fresh("v"), CPSBlockGet, List(env, getConst(x._2+1))))
+        val fv = freeVars(f.body).distinct.filter(x => x != f.name && !f.args.contains(x))
+        val fvBindings = fv.zipWithIndex.map(x => (Symbol.fresh("v"), CPSBlockGet, List(env, getInnerConst(x._2+1))))
         
         pBindings ::= (f.name, CPSBlockAlloc(202), List(getConst(fv.size+1)))
         
@@ -128,17 +138,19 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
           i = i + 1
         })
         
-        L.FunDef(w, f.retC, env :: f.args, 
+        L.FunDef(w, f.retC, env :: f.args,
+          LetL_*(innerConsts)(
             LetP_*(fvBindings)(
               transform(f.body.subst(PartialFunction[L.Name, L.Name] {
                 case x if x == f.name => env
                 case x if fv.contains(x) => fv.zip(fvBindings).filter(_._1 == x)(0)._2._1
-              }))))
+                case x => x
+              })))))
       })
 
       LetL_*(consts)(
         L.LetF(funDefs, 
-          LetP_*(pBindings)(transform(body))))
+          LetP_*(pBindings.reverse)(transform(body))))
     }
     
     case H.AppF(fun, retC, args) => {
@@ -195,6 +207,10 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
       tempLetL(1) { c1 => 
         tempLetP(CPSArithShiftR, List(n, c1)) { r => 
           L.LetP(name, CPSBlockSet, List(b, r, v), transform(body)) }}
+    
+    case H.LetC(continuations, body) => L.LetC(continuations.map(c => L.CntDef(c.name, c.args, transform(c.body))), transform(body))
+    
+    case H.AppC(c, args) => L.AppC(c, args)
       
     case H.If(L3IntLt, args, thenC, elseC) =>
       L.If(CPSLt, args, thenC, elseC)

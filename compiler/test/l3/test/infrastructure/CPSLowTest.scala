@@ -6,6 +6,7 @@ import l3.CPSTreeFormatter._
 import scala.util.parsing.input.StreamReader
 import java.io.StringReader
 import java.io.StringWriter
+import CPSTreeFormatter._
 
 /**
  * Low-level CPS testing infrastructure, after the data representation transformation
@@ -38,7 +39,7 @@ class CPSLowTest extends CPSTest(SymbolicCPSTreeModuleLow) {
     val pipeline =
       () => (CL3NameAnalyzer
              andThen CL3ToCPSTranslator
-             andThen CPSDataRepresenter             
+             andThen CPSDataRepresenter
              andThen CPSInterpreterLow)
     val output = compileUsingPipelineAndRedirect(() => source, pipeline, input)
     assertEqual(source, input, output, expectedOutput)
