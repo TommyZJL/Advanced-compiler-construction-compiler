@@ -25,6 +25,7 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
     case H.AppC(cont, args) => args
     case H.AppF(func, cont, args) => func :: args
     case H.If(prim, args, thenC, elseC) => args
+    case _ => ???
   }
 
   private def transform(tree: H.Tree) : L.Tree = tree match {
@@ -100,23 +101,51 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
           L.LetP(name, CPSOr, List(r, c1), transform(body)) }}
       
     case H.LetF(functions, body) => {
-      val letf = functions.map(f => {
+      var consts: List[(L.Name, Int)] = Nil
+      def getConst(i: Int): L.Name = consts.filter(_._2 == i) match {
+        case x :: Nil => x._1
+        case Nil => {
+          val c = Symbol.fresh("c")
+          consts ::= (c, i)
+          c
+        }
+      }
+      
+      var pBindings: List[(L.Name, CPSValuePrimitive, List[L.Name])] = Nil
+      
+      val funDefs = functions.map(f => {
         val w = Symbol.fresh("w")
         val env = Symbol.fresh("env")
         val fv = freeVars(f.body)
-        val consts = fv.zipWithIndex.map(x => (Symbol.fresh("c"), x._2+1))
-        val freeVarsName = fv.map(x => Symbol.fresh("v"))
-        val freeVarsBody = fv.zip(consts).map(x => (CPSBlockGet, List(env, x._1)))
-        (w,
+        val fvBindings = fv.zipWithIndex.map(x => (Symbol.fresh("v"), CPSBlockGet, List(env, getConst(x._2+1))))
+        
+        pBindings ::= (f.name, CPSBlockAlloc(202), List(getConst(fv.size+1)))
+        
+        var i = 1
+        pBindings ::= (Symbol.fresh("t"), CPSBlockSet, List(f.name, getConst(0), w))
+        fv.foreach(v => {
+          pBindings ::= (Symbol.fresh("t"), CPSBlockSet, List(f.name, getConst(i), v))
+          i = i + 1
+        })
+        
         L.FunDef(w, f.retC, env :: f.args, 
-          LetL_*((Symbol.fresh("czero"), 0) :: consts)(
-            LetP_*(freeVarsName, freeVarsBody)(
+            LetP_*(fvBindings)(
               transform(f.body.subst(PartialFunction[L.Name, L.Name] {
                 case x if x == f.name => env
-                case x if fv.contains(x) => fv.zip(freeVarsName).filter(_._1 == x)(0)._2
-              }))))))
+                case x if fv.contains(x) => fv.zip(fvBindings).filter(_._1 == x)(0)._2._1
+              }))))
       })
-      null
+
+      LetL_*(consts)(
+        L.LetF(funDefs, 
+          LetP_*(pBindings)(transform(body))))
+    }
+    
+    case H.AppF(fun, retC, args) => {
+      val f = Symbol.fresh("f")
+      tempLetL(0) { zero =>
+        L.LetP(f, CPSBlockGet, List(fun, zero), L.AppF(f, retC, fun :: args))
+      }
     }
       /*L.LetF(functions.map(f => 
         L.FunDef(f.name, f.retC, f.args, transform(f.body))),
@@ -203,12 +232,12 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
         L.LetL(c, v, LetL_*(vs)(body))
     }
   
-  private def LetP_*(vars: List[L.Name], varsBody: List[(CPSValuePrimitive, List[L.Name])])(body: L.Tree): L.Tree = 
-    (vars, varsBody) match {
-      case (Nil, Nil) =>
+  private def LetP_*(bindings: List[(L.Name, CPSValuePrimitive, List[L.Name])])(body: L.Tree): L.Tree = 
+    bindings match {
+      case Nil =>
         body
-      case (v :: vs, (prim, args) :: vbs) =>
-        L.LetP(v, prim, args, LetP_*(vs, vbs)(body))
+      case (name, prim, args) :: xs =>
+        L.LetP(name, prim, args, LetP_*(xs)(body))
     }
   
   // Tree builders
