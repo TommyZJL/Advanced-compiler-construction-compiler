@@ -20,8 +20,8 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
   private def freeVars(tree: H.Tree): List[H.Name] = tree match {
     case H.LetL(name, value, body) => freeVars(body).filter(_ != name)
     case H.LetP(name, prim, args, body) => freeVars(body).filter(_ != name) ::: args
-    case H.LetC(continuations, body) => freeVars(body) ::: continuations.flatMap(c => freeVars(c.body).diff(c.args))
-    case H.LetF(functions, body) => (freeVars(body) ::: functions.flatMap(f => freeVars(f.body).diff(f.args))).diff(functions.map(f => f.name))
+    case H.LetC(continuations, body) => freeVars(body).distinct ::: continuations.flatMap(c => freeVars(c.body).distinct.diff(c.args))
+    case H.LetF(functions, body) => (freeVars(body).distinct ::: functions.flatMap(f => freeVars(f.body).distinct.diff(f.args))).distinct.diff(functions.map(f => f.name))
     case H.AppC(cont, args) => args
     case H.AppF(func, cont, args) => func :: args
     case H.If(prim, args, thenC, elseC) => args
@@ -159,11 +159,7 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
         L.LetP(f, CPSBlockGet, List(fun, zero), L.AppF(f, retC, fun :: args))
       }
     }
-      /*L.LetF(functions.map(f => 
-        L.FunDef(f.name, f.retC, f.args, transform(f.body))),
-        transform(body)
-      )*/
-      
+    
     // Casts
     case H.LetP(name, L3IntToChar, List(a), body) =>
       tempLetL(2) { c2 => 
@@ -174,11 +170,18 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
       tempLetL(2) { c2 => 
         L.LetP(name, CPSArithShiftR, List(a, c2), transform(body)) }
       
-    // Char print
+    // Char primitives
     case H.LetP(name, L3CharPrint, List(a), body) =>
       tempLetL(3) { c3 => 
         tempLetP(CPSArithShiftR, List(a, c3)) { r => 
           L.LetP(name, CPSCharPrint, List(r), transform(body)) }}
+    
+    case H.LetP(name, L3CharRead, List(), body) =>
+      tempLetL(3) { c3 =>
+        tempLetL(BitTwiddling.bitsToIntMSBF(1,1,0)) { c6 =>
+          tempLetP(CPSCharRead, List()) { c =>
+            tempLetP(CPSArithShiftL, List(c, c3)) { t =>
+              L.LetP(name, CPSAdd, List(t, c6), transform(body)) }}}}
     
     // Block primitives
     case H.LetP(name, L3BlockAlloc(tag), List(a), body) =>
