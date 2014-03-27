@@ -9,6 +9,4 @@ class CPSDataRepresentation_Blackbox extends CPSLowTest with AllOKTests {
 
   val compileAndInterpret = (src: String) => testCPSLowProgramOutput(source = src)
   // TODO: Add other specific tests here
-  
-  @Test def onePlusTwo = compileAndInterpret("(@ + 1 2)")
 }
