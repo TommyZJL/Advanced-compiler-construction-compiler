@@ -23,7 +23,7 @@ class CPSLowTest extends CPSTest(SymbolicCPSTreeModuleLow) {
     val pipeline =
       () => (CL3NameAnalyzer
              andThen CL3ToCPSTranslator
-             andThen CPSDataRepresenter             
+             andThen CPSDataRepresenter
              andThen CPSVariableRenamePhase
              andThen TreeToString)
     val generatedTree = compileUsingPipeline(() => source, pipeline)

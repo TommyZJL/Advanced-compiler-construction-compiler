@@ -11,20 +11,20 @@ object CPSHoister extends (Tree => Tree) {
       val LetF(funs, hBody) = hoist(body)
       LetF(funs, LetL(name, value, hBody))
     
-    case LetF(functions, body) => ???
+    case LetF(functions, body) => 
+      val LetF(funs, hBody) = hoist(body)
+      LetF(funs ::: functions.flatMap(hoistF(_)), hBody)
     
-    case LetP(name, prim, args, tree) => ???
+    case LetP(name, prim, args, body) => 
+      val LetF(funs, hBody) = hoist(body)
+      LetF(funs, LetP(name, prim, args, hBody))
     
-    case LetC(continuations, body) => ???
+    case LetC(continuations, body) => 
+      val LetF(funs, hBody) = hoist(body)
+      val ctns = continuations.map(hoistC(_))
+      LetF(funs ::: ctns.flatMap(_._1), LetC(ctns.map(_._2), hBody))
     
-    case AppC(cont, args) => ???
-    
-    case AppF(func, retC, args) => ???
-    
-    case If(prim, args, thenC, elseC) => ???
-    
-    case Halt => ???
-    //TODO: handle other cases
+    case x => LetF(Nil, x)
   }
 
   private def hoistC(cnt: CntDef): (List[FunDef], CntDef) = {
