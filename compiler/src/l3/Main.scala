@@ -18,12 +18,12 @@ object Main extends MainHelper {
         case L3Parser.Success(program, _) =>
           val backEnd = (
             CL3NameAnalyzer
-            andThen treePrinter("Tree in CL3")
             andThen CL3ToCPSTranslator
-            andThen treePrinter("Tree in CPS")
+            andThen CPSOptimizerHigh
             andThen CPSDataRepresenter
+            andThen CPSOptimizerLow
             andThen CPSHoister
-            andThen CPSInterpreterLow)
+            andThen CPSInterpreterLowWithStats(showStats = true))
           backEnd(program)
         case failure @ L3Parser.NoSuccess(_, _) =>
           Console.println(failure)
