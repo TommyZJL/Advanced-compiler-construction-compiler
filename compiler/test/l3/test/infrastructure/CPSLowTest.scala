@@ -42,10 +42,7 @@ class CPSLowTest extends CPSTest(SymbolicCPSTreeModuleLow) {
              andThen CL3ToCPSTranslator
              andThen CPSDataRepresenter
              andThen CPSHoister
-<<<<<<< HEAD
-=======
              andThen CPSHoistChecker
->>>>>>> origin/assignment5
              andThen CPSInterpreterLow)
     val output = compileUsingPipelineAndRedirect(() => source, pipeline, input)
     assertEqual(source, input, output, expectedOutput)
