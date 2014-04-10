@@ -1,6 +1,6 @@
 package l3
 
-import scala.collection.mutable.{ Map => MutableMap }
+import scala.collection.mutable.{Map => MutableMap}
 
 abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
   (val treeModule: T) {
@@ -57,6 +57,56 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
   private def shrink(tree: Tree): Tree = {
 
     def shrinkT(tree: Tree)(implicit s: State): Tree = tree match {
+      // Literals
+      case LetL(name, value, body) if s.dead(name) => shrinkT(body)
+      case LetL(name, value, body) if s.lInvEnv.contains(value) =>
+        shrinkT(body.subst(PartialFunction[Name, Name] {
+          case x if x == name => s.lInvEnv.get(value).get
+          case x => x
+        }))//(s.withSubst(name, s.lInvEnv.get(value).get))
+      case LetL(name, value, body) =>
+        LetL(name, value, shrinkT(body)(s.withLit(name, value)))
+      
+      // Primitives
+      case LetP(name, prim, args, body) if s.dead(name) && !isImpure(prim) => shrinkT(body)
+      case LetP(name, prim, args, body) if s.eInvEnv.contains((prim,args)) =>
+        shrinkT(body.subst(PartialFunction[Name, Name] {
+          case x if x == name => s.eInvEnv.get((prim,args)).get
+          case x => x
+        }))
+        
+      case LetP(name, prim, args, body) if args.forall(a => s.lEnv.contains(a)) 
+            && vEvaluator.isDefinedAt((prim, args.map(a => s.lEnv.get(a).get))) => { 
+        val value = vEvaluator.apply((prim, args.map(a => s.lEnv.get(a).get)))
+        LetL(name, value, shrinkT(body)(s.withLit(name, value)))
+      }
+      case LetP(name, prim, args, body) => 
+        LetP(name, prim, args, shrinkT(body)(s.withExp(name, prim, args)))
+      
+      // Functions
+      case LetF(functions, body) => {
+        functions.filter(f => {
+          functions.filter(_ != f).forall(f2 =>
+            !census(f2.body).contains(f.name) || census(body).contains(f.name)
+          )
+        }) match {
+          case Nil => shrinkT(body)
+          case x::xs => LetF(x::xs, shrinkT(body))
+        }
+      }
+      
+      // Continuations
+      case LetC(continuations, body) => {
+        continuations.filter(c => {
+          continuations.filter(_ != c).forall(c2 =>
+            !census(c2.body).contains(c.name) || census(body).contains(c.name)
+          )
+        }) match {
+          case Nil => shrinkT(body)
+          case x::xs => LetC(x::xs, shrinkT(body))
+        }
+      }
+      
       case _ =>
         // TODO:
         tree
