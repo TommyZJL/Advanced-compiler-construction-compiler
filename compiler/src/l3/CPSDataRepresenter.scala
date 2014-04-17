@@ -79,7 +79,7 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
           tempLetP(CPSSub, List(args(1), c1)) { r2 => 
             tempLetP(CPSArithShiftR, List(r2, c1)) { r3 =>
               tempLetP(CPSArithShiftR, List(r1, r3)) { r =>
-                L.LetP(name, CPSAdd, List(r, c1), transform(body)) }}}}}
+                L.LetP(name, CPSOr, List(r, c1), transform(body)) }}}}}
     
     case H.LetP(name, L3IntArithShiftLeft, args, body) =>
       tempLetL(1) { c1 =>
@@ -87,7 +87,8 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
           tempLetP(CPSSub, List(args(1), c1)) { r2 => 
             tempLetP(CPSArithShiftR, List(r2, c1)) { r3 =>
               tempLetP(CPSArithShiftL, List(r1, r3)) { r =>
-                L.LetP(name, CPSAdd, List(r, c1), transform(body)) }}}}}
+                L.LetP(name, CPSOr, List(r, c1), transform(body)) }}}}}
+      
       
     case H.LetP(name, L3IntBitwiseAnd, args, body) =>
       L.LetP(name, CPSAnd, List(args(0), args(1)), transform(body))

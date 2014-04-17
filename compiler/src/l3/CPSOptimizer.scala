@@ -68,8 +68,9 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         LetL(name, value, shrinkT(body)(s.withLit(name, value)))
       
       // Primitives
-      case LetP(name, prim, args, body) if s.dead(name) && !isImpure(prim) => shrinkT(body)
-      case LetP(name, prim, args, body) if s.eInvEnv.contains((prim,args)) =>
+      case LetP(name, prim, args, body) if s.dead(name) && !isImpure(prim) &&
+        prim != CPSDiv && prim != CPSMod => shrinkT(body)
+      case LetP(name, prim, args, body) if s.eInvEnv.contains((prim, args)) =>
         shrinkT(body.subst(PartialFunction[Name, Name] {
           case x if x == name => s.eInvEnv.get((prim,args)).get
           case x => x
@@ -80,9 +81,36 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         val value = vEvaluator.apply((prim, args.map(a => s.lEnv.get(a).get)))
         LetL(name, value, shrinkT(body)(s.withLit(name, value)))
       }
+
+      // Left/Right absorbing/neutral
+      case LetP(name, prim, args, body) if args.exists(a => s.lEnv.contains(a) &&
+          (leftAbsorbing.contains((s.lEnv.get(a).get, prim)) || rightAbsorbing.contains((prim, s.lEnv.get(a).get))
+              || leftNeutral.contains((s.lEnv.get(a).get, prim)) || rightNeutral.contains((prim, s.lEnv.get(a).get)))) => {
+        val value = args.filter(a => s.lEnv.contains(a) &&
+          (leftAbsorbing.contains((s.lEnv.get(a).get, prim)) || rightAbsorbing.contains((prim, s.lEnv.get(a).get))
+              || leftNeutral.contains((s.lEnv.get(a).get, prim)) || rightNeutral.contains((prim, s.lEnv.get(a).get))))
+        shrinkT(body)(s.withSubst(name, value.head))
+      }
+     
+          
       case LetP(name, prim, args, body) => 
         LetP(name, prim, args, shrinkT(body)(s.withExp(name, prim, args)))
       
+     
+            
+      case If(cond, args, thenC, elseC) if args.forall(a => s.lEnv.contains(a)) 
+            && cEvaluator.isDefinedAt((cond, args.map(a => s.lEnv.get(a).get))) => {
+        val value = cEvaluator.apply((cond, args.map(a => s.lEnv.get(a).get)))
+        if (value) {
+          AppC(thenC, Nil)
+        }
+        else {
+          AppC(elseC, Nil)
+        }
+      }
+      
+      
+            
       // Functions
       case LetF(functions, body) => {
         functions.filter(f => {
