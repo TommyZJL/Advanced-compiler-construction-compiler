@@ -207,10 +207,10 @@ object CPSOptimizerLow extends CPSOptimizer(SymbolicCPSTreeModuleLow)
 
   protected val leftNeutral: Set[(Literal, ValuePrimitive)] =
     Set((0, CPSAdd), (0, CPSOr), (0, CPSXOr),
-        (1, CPSMul), (0, CPSAnd))
+        (1, CPSMul))
   protected val rightNeutral: Set[(ValuePrimitive, Literal)] =
     Set((CPSAdd, 0), (CPSSub, 0), (CPSOr, 0), (CPSXOr, 0),
-        (CPSMul, 1), (CPSDiv, 1), (CPSAnd, 0),
+        (CPSMul, 1), (CPSDiv, 1),
         (CPSArithShiftL, 0), (CPSArithShiftR, 0))
   protected val leftAbsorbing: Set[(Literal, ValuePrimitive)] =
     Set((0, CPSMul), (0, CPSAnd))
