@@ -163,11 +163,38 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
       val cntLimit = i
       println("Inline : " + tree)
       def inlineT(tree: Tree)(implicit s: State): Tree = tree match {
+        case LetL(name, value, body) =>
+          LetL(name, value, inlineT(body))
+        case LetP(name, prim, args, body) =>
+          LetP(name, prim, args, inlineT(body))
+        case LetC(continuations, body) => {
+          def isInlineable(c: CntDef): Boolean = 
+            s.appliedOnce(c.name) && continuations.forall(c2 => {
+              census(c2.body).getOrElse(c.name, 0) == 0
+            })
+            
+          continuations.foreach(c => printf(c.name + " :  " + isInlineable(c)))
+            
+          val continuationsToInline = continuations.filter(isInlineable(_))
+          
+          LetC(continuations.filter(!isInlineable(_)), inlineT(body)(s.withCnts(continuationsToInline)))
+        }
+        
+        case AppC(name, args) if s.cEnv.contains(name) => {
+          val cntDef = s.cEnv.get(name).get
+          
+          inlineT(cntDef.body.subst(PartialFunction[Name, Name] {
+            case x if cntDef.args.contains(x) => args(cntDef.args.indexOf(x))
+            case x => x
+          }))
+        }
         case LetF(functions, body) => {
           def isInlineable(f: FunDef): Boolean = 
             s.appliedOnce(f.name) && functions.forall(f2 => {
               census(f2.body).getOrElse(f.name, 0) == 0
             })
+            
+          functions.foreach(f => printf(f.name + " :  " + isInlineable(f)))
             
           val functionsToInline = functions.filter(isInlineable(_))
           

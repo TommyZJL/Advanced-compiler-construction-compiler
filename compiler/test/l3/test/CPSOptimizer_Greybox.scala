@@ -10,7 +10,9 @@ import l3.test.infrastructure.CPSOptTest
 class CPSOptimizer_Greybox extends CPSOptTest {
 
   // example tests:
-
+  @Test def testBasic = 
+    testCPSOptEarly("(let ((x 1)) x)", _.get(LetL) == 0)
+  
   @Test def testDCEFunsSimple =
     testCPSOptEarly("(letrec ((f (fun (x) (f x)))) #u)", _.getFuncs == 0)
 
@@ -23,20 +25,15 @@ class CPSOptimizer_Greybox extends CPSOptTest {
   @Test def testConstantFoldingPlus =
     testCPSBothPar("(@ + 2 1)", stats => stats.get(LetP) == 0)
     
-  @Test def testConstantFoldingAdd =
-    testCPSBothSeq("(let ((a (@+ 1 2))) a)", s => s.get(LetP) == 0 && s.get(LetL) == 1)
+  @Test def testConstantFoldingMinus =
+    testCPSBothPar("(@ - 2 1)", stats => stats.get(LetP) == 0)
     
-  @Test def testConstantFoldingSub =
-    testCPSBothSeq("(let ((a (@- 2 1))) a)", s => s.get(LetP) == 0 && s.get(LetL) == 1)
-  
-  @Test def testConstantFoldingMul =
-    testCPSBothSeq("(let ((a (@* 2 1))) a)", s => s.get(LetP) == 0 && s.get(LetL) == 1)
-
+  @Test def testConstantFoldingTimes =
+    testCPSBothPar("(@ * 2 1)", stats => stats.get(LetP) == 0)
+    
   @Test def testConstantFoldingDiv =
-    testCPSBothSeq("(let ((a (@/ 2 1))) a)", s => s.get(LetP) == 0 && s.get(LetL) == 1)
+    testCPSBothPar("(@ / 2 1)", stats => stats.get(LetP) == 0)
   
   @Test def testFunInlining =
-    testCPSBothSeq("(def f (fun (x y) (@+ x y))) (f 1 2)", s => s.get(LetP) == 0 && s.get(LetL) == 1)
-    
-    
+    testCPSBothSeq("(def f (fun (x) (@ char-print 'a'))) (f 1)", s => s.get(LetF) == 0)
 }
