@@ -64,8 +64,6 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
           case x if x == name => s.lInvEnv.get(value).get
           case x => x
         }))//(s.withSubst(name, s.lInvEnv.get(value).get))
-      case LetL(name, value, body) =>
-        LetL(name, value, shrinkT(body)(s.withLit(name, value)))
       
       // Primitives
       case LetP(name, prim, args, body) if s.dead(name) && !isImpure(prim) &&
@@ -75,13 +73,12 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
           case x if x == name => s.eInvEnv.get((prim,args)).get
           case x => x
         }))
-        
       case LetP(name, prim, args, body) if args.forall(a => s.lEnv.contains(a)) 
             && vEvaluator.isDefinedAt((prim, args.map(a => s.lEnv.get(a).get))) => { 
         val value = vEvaluator.apply((prim, args.map(a => s.lEnv.get(a).get)))
         LetL(name, value, shrinkT(body)(s.withLit(name, value)))
       }
-
+      
       // Left/Right absorbing/neutral
       case LetP(name, prim, args, body) if args.exists(a => s.lEnv.contains(a) &&
           (leftAbsorbing.contains((s.lEnv.get(a).get, prim)) || rightAbsorbing.contains((prim, s.lEnv.get(a).get))
@@ -91,13 +88,8 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
               || leftNeutral.contains((s.lEnv.get(a).get, prim)) || rightNeutral.contains((prim, s.lEnv.get(a).get))))
         shrinkT(body)(s.withSubst(name, value.head))
       }
-     
-          
-      case LetP(name, prim, args, body) => 
-        LetP(name, prim, args, shrinkT(body)(s.withExp(name, prim, args)))
       
-     
-            
+      // If
       case If(cond, args, thenC, elseC) if args.forall(a => s.lEnv.contains(a)) 
             && cEvaluator.isDefinedAt((cond, args.map(a => s.lEnv.get(a).get))) => {
         val value = cEvaluator.apply((cond, args.map(a => s.lEnv.get(a).get)))
@@ -109,8 +101,6 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         }
       }
       
-      
-            
       // Functions
       case LetF(functions, body) => {
         functions.filter(f => {
@@ -135,9 +125,13 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         }
       }
       
-      case _ =>
-        // TODO:
-        tree
+      // Base cases 
+      case LetL(name, value, body) =>
+        LetL(name, value, shrinkT(body)(s.withLit(name, value)))
+      case LetP(name, prim, args, body) => 
+        LetP(name, prim, args, shrinkT(body)(s.withExp(name, prim, args)))
+      case x =>
+        x
     }
 
     shrinkT(tree)(State(census(tree)))
@@ -295,7 +289,7 @@ object CPSOptimizerLow extends CPSOptimizer(SymbolicCPSTreeModuleLow)
   protected val rightAbsorbing: Set[(ValuePrimitive, Literal)] =
     Set((CPSMul, 0), (CPSAnd, 0))
   protected val sameArgReduce: Map[ValuePrimitive, Literal] =
-    Map(CPSSub -> 0)
+    Map(CPSSub -> 0, CPSDiv -> 1, CPSMod -> 0, CPSXOr -> 0)
 
   protected val vEvaluator: PartialFunction[(ValuePrimitive, Seq[Literal]),
                                             Literal] = {
