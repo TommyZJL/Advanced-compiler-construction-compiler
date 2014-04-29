@@ -55,11 +55,10 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
 
   // Shrinking optimizations:
   private def shrink(tree: Tree): Tree = {
-
     def shrinkT(tree: Tree)(implicit s: State): Tree = tree match {
       // Literals
       case LetL(name, value, body) if s.dead(name) => shrinkT(body)
-      case LetL(name, value, body) if s.lInvEnv.contains(value) =>
+      case LetL(name, value, body) if s.lInvEnv.contains(value) && name != s.lInvEnv.get(value).get =>
         shrinkT(body.subst(PartialFunction[Name, Name] {
           case x if x == name => s.lInvEnv.get(value).get
           case x => x
@@ -67,12 +66,29 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
       
       // Primitives
       case LetP(name, prim, args, body) if s.dead(name) && !isImpure(prim) &&
-        prim != CPSDiv && prim != CPSMod => shrinkT(body)
-      case LetP(name, prim, args, body) if s.eInvEnv.contains((prim, args)) =>
+        !hasBorderEffect(prim) => {
+          shrinkT(body)
+        }
+      case LetP(name, prim, args, body) if s.eInvEnv.contains((prim, args)) 
+          && name != s.eInvEnv.get((prim, args)).get =>
         shrinkT(body.subst(PartialFunction[Name, Name] {
           case x if x == name => s.eInvEnv.get((prim,args)).get
           case x => x
         }))
+      case LetP(name, prim, List(b, i), body) 
+        if (s.eInvEnv.map(x => (x._2, x._1)).get(b) match {
+          case Some(x) => isFixedBlockAlloc(x._1)
+          case _ => false
+        }) && (s.eInvEnv.filter(x => x._1._1 == blockSet && x._1._2(0) == b && x._1._2(1) == i).size == 1) => {
+          val tuple = s.eInvEnv.filter(x => x._1._1 == blockSet && x._1._2(0) == b && x._1._2(1) == i).toList(0)
+          val v = tuple._1._2(2)
+          
+          shrinkT(body.subst(PartialFunction[Name, Name] {
+            case x if x == name => v
+            case x => x
+          }))
+        }
+        
       case LetP(name, prim, args, body) if args.forall(a => s.lEnv.contains(a)) 
             && vEvaluator.isDefinedAt((prim, args.map(a => s.lEnv.get(a).get))) => { 
         val value = vEvaluator.apply((prim, args.map(a => s.lEnv.get(a).get)))
@@ -121,14 +137,14 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
           )
         }) match {
           case Nil => shrinkT(body)
-          case x::xs => LetC(x::xs, shrinkT(body))
+          case x::xs => LetC(continuations.map(x => CntDef(x.name, x.args, shrinkT(x.body))), shrinkT(body))
         }
       }
       
       // Base cases 
       case LetL(name, value, body) =>
         LetL(name, value, shrinkT(body)(s.withLit(name, value)))
-      case LetP(name, prim, args, body) => 
+      case LetP(name, prim, args, body) =>
         LetP(name, prim, args, shrinkT(body)(s.withExp(name, prim, args)))
       case x =>
         x
@@ -208,6 +224,11 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
 
   protected def isImpure(prim: ValuePrimitive): Boolean
   protected def isStable(prim: ValuePrimitive): Boolean
+  
+  protected def blockSet(): ValuePrimitive
+  protected def isFixedBlockAlloc(prim: ValuePrimitive): Boolean
+  protected def hasBorderEffect(prim: ValuePrimitive): Boolean
+  
   protected val leftNeutral: Set[(Literal, ValuePrimitive)]
   protected val rightNeutral: Set[(ValuePrimitive, Literal)]
   protected val leftAbsorbing: Set[(Literal, ValuePrimitive)]
@@ -224,16 +245,28 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
   import treeModule._
 
   protected def isImpure(prim: ValuePrimitive): Boolean = prim match {
-    // TODO
+    case L3BlockSet | L3CharRead | L3CharPrint => true
     case _ => false
   }
 
   protected def isStable(prim: ValuePrimitive): Boolean = {
     require(!isImpure(prim))
     prim match {
-      // TODO
+      case L3BlockAlloc(_) | L3BlockGet => false
       case _ => true
     }
+  }
+  
+  protected def blockSet: ValuePrimitive = L3BlockSet
+  
+  protected def isFixedBlockAlloc(prim: ValuePrimitive): Boolean = prim match {
+    case L3BlockAlloc(x) if x == 202 => true
+    case _ => false
+  }
+  
+  protected def hasBorderEffect(prim: ValuePrimitive): Boolean = prim match {
+    case L3IntDiv | L3IntMod => true
+    case _ => false
   }
 
   protected val leftNeutral: Set[(Literal, ValuePrimitive)] =
@@ -275,6 +308,18 @@ object CPSOptimizerLow extends CPSOptimizer(SymbolicCPSTreeModuleLow)
       case CPSBlockAlloc(_) | CPSBlockGet => false
       case _ => true
     }
+  }
+  
+  protected def blockSet: ValuePrimitive = CPSBlockSet
+  
+  protected def isFixedBlockAlloc(prim: ValuePrimitive): Boolean = prim match {
+    case CPSBlockAlloc(x) if x == 202 => true
+    case _ => false
+  }
+  
+  protected def hasBorderEffect(prim: ValuePrimitive): Boolean = prim match {
+    case CPSDiv | CPSMod => true
+    case _ => false
   }
 
   protected val leftNeutral: Set[(Literal, ValuePrimitive)] =
