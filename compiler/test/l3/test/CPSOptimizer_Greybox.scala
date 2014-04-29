@@ -22,4 +22,21 @@ class CPSOptimizer_Greybox extends CPSOptTest {
 
   @Test def testConstantFoldingPlus =
     testCPSBothPar("(@ + 2 1)", stats => stats.get(LetP) == 0)
+    
+  @Test def testConstantFoldingAdd =
+    testCPSBothSeq("(let ((a (@+ 1 2))) a)", s => s.get(LetP) == 0 && s.get(LetL) == 1)
+    
+  @Test def testConstantFoldingSub =
+    testCPSBothSeq("(let ((a (@- 2 1))) a)", s => s.get(LetP) == 0 && s.get(LetL) == 1)
+  
+  @Test def testConstantFoldingMul =
+    testCPSBothSeq("(let ((a (@* 2 1))) a)", s => s.get(LetP) == 0 && s.get(LetL) == 1)
+
+  @Test def testConstantFoldingDiv =
+    testCPSBothSeq("(let ((a (@/ 2 1))) a)", s => s.get(LetP) == 0 && s.get(LetL) == 1)
+  
+  @Test def testFunInlining =
+    testCPSBothSeq("(def f (fun (x y) (@+ x y))) (f 1 2)", s => s.get(LetP) == 0 && s.get(LetL) == 1)
+    
+    
 }

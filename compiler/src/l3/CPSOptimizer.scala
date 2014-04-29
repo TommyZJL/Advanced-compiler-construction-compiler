@@ -91,7 +91,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         
       case LetP(name, prim, args, body) if args.forall(a => s.lEnv.contains(a)) 
             && vEvaluator.isDefinedAt((prim, args.map(a => s.lEnv.get(a).get))) => { 
-        val value = vEvaluator.apply((prim, args.map(a => s.lEnv.get(a).get)))
+        val value = vEvaluator((prim, args.map(a => s.lEnv.get(a).get)))
         LetL(name, value, shrinkT(body)(s.withLit(name, value)))
       }
       
@@ -108,7 +108,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
       // If
       case If(cond, args, thenC, elseC) if args.forall(a => s.lEnv.contains(a)) 
             && cEvaluator.isDefinedAt((cond, args.map(a => s.lEnv.get(a).get))) => {
-        val value = cEvaluator.apply((cond, args.map(a => s.lEnv.get(a).get)))
+        val value = cEvaluator((cond, args.map(a => s.lEnv.get(a).get)))
         if (value) {
           AppC(thenC, Nil)
         }
@@ -161,8 +161,28 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
     val trees = Stream.iterate((0, tree), fibonacci.length) { case (i, tree) =>
       val funLimit = fibonacci(i)
       val cntLimit = i
-
+      println("Inline : " + tree)
       def inlineT(tree: Tree)(implicit s: State): Tree = tree match {
+        case LetF(functions, body) => {
+          def isInlineable(f: FunDef): Boolean = 
+            s.appliedOnce(f.name) && functions.forall(f2 => {
+              census(f2.body).getOrElse(f.name, 0) == 0
+            })
+            
+          val functionsToInline = functions.filter(isInlineable(_))
+          
+          LetF(functions.filter(!isInlineable(_)), inlineT(body)(s.withFuns(functionsToInline)))
+        }
+        
+        case AppF(name, retC, args) if s.fEnv.contains(name) => {
+          val fun = s.fEnv.get(name).get
+          
+          inlineT(fun.body.subst(PartialFunction[Name, Name] {
+            case x if x == fun.retC => retC
+            case x if fun.args.contains(x) => args(fun.args.indexOf(x))
+            case x => x
+          }))
+        }
         case _ =>
           // TODO:
           tree
@@ -283,13 +303,30 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
   protected val vEvaluator: PartialFunction[(ValuePrimitive, Seq[Literal]),
                                             Literal] = {
     case (L3IntAdd, Seq(IntLit(x), IntLit(y))) => IntLit(x + y)
-    // TODO
+    case (L3IntSub, Seq(IntLit(x), IntLit(y))) => IntLit(x - y)
+    case (L3IntMul, Seq(IntLit(x), IntLit(y))) => IntLit(x * y)
+    case (L3IntDiv, Seq(IntLit(x), IntLit(y))) if (y != 0) => IntLit(x / y)
+    case (L3IntMod, Seq(IntLit(x), IntLit(y))) if (y != 0) => IntLit(x % y)
+    
+    case (L3IntArithShiftLeft, Seq(IntLit(x), IntLit(y))) => IntLit(x << y)
+    case (L3IntArithShiftRight, Seq(IntLit(x), IntLit(y))) => IntLit(x >> y)
+    case (L3IntBitwiseAnd, Seq(IntLit(x), IntLit(y))) => IntLit(x & y)
+    case (L3IntBitwiseOr, Seq(IntLit(x), IntLit(y))) => IntLit(x | y)
+    case (L3IntBitwiseXOr, Seq(IntLit(x), IntLit(y))) => IntLit(x ^ y)
   }
 
   protected val cEvaluator: PartialFunction[(TestPrimitive, List[Literal]),
                                             Boolean] = {
     case (L3IntP, Seq(IntLit(_))) => true
-    // TODO
+    case (L3CharP, Seq(CharLit(_))) => true
+    case (L3BoolP, Seq(BooleanLit(_))) => true
+    case (L3UnitP, Seq(UnitLit)) => true
+    case (L3IntLt, Seq(IntLit(x), IntLit(y))) => x < y
+    case (L3IntLe, Seq(IntLit(x), IntLit(y))) => x <= y
+    case (L3Eq, Seq(IntLit(x), IntLit(y))) => x == y
+    case (L3Ne, Seq(IntLit(x), IntLit(y))) => x != y
+    case (L3IntGe, Seq(IntLit(x), IntLit(y))) => x >= y
+    case (L3IntGt, Seq(IntLit(x), IntLit(y))) => x > y
   }
 }
 
@@ -354,7 +391,6 @@ object CPSOptimizerLow extends CPSOptimizer(SymbolicCPSTreeModuleLow)
 
   protected val cEvaluator: PartialFunction[(TestPrimitive, List[Literal]),
                                             Boolean] = {
-
     case (CPSLt, Seq(x, y)) => x < y
     case (CPSLe, Seq(x, y)) => x <= y
     case (CPSEq, Seq(x, y)) => x == y
