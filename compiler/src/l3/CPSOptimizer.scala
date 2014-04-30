@@ -11,11 +11,11 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
   import treeModule._
 
   def apply(tree: Tree): Tree = {
-    //printTree("Tree to optimize :", tree)
+    printTree("Tree to optimize :", tree)
     val simplifiedTree = fixedPoint(tree)(shrink)
     val maxSize = (size(simplifiedTree) * 1.5).toInt
     val ft = fixedPoint(simplifiedTree, 8) { t => shrink(inline(t, maxSize)) }
-    //printTree("Final Tree : ", ft)
+    printTree("Final Tree : ", ft)
     ft
   }
   
@@ -70,8 +70,8 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
 
   // Shrinking optimizations:
   private def shrink(tree: Tree): Tree = {
-    
-    def computeFunReachability(tree: Tree, funs: List[FunDef]): List[Name] = tree match {
+    printTree("Tree to shrink :", tree)
+    /*def computeFunReachability(tree: Tree, funs: List[FunDef]): List[Name] = tree match {
       case LetL(name, value, body) => computeFunReachability(body, funs)
       case LetP(name, prim, args, body) => args ::: computeFunReachability(body, funs)
       case LetF(functions, body) => computeFunReachability(body, functions ::: funs)
@@ -86,7 +86,25 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
       case x => Nil
     }
     
-    val reachableFuns = computeFunReachability(tree, Nil)
+    def computeCntReachability(tree: Tree, cnts: List[CntDef]): List[Name] = tree match {
+      case LetL(name, value, body) => computeCntReachability(body, cnts)
+      case LetP(name, prim, args, body) => args ::: computeCntReachability(body, cnts)
+      case LetF(functions, body) => 
+        functions.flatMap(f => computeCntReachability(f.body, cnts)) ::: computeCntReachability(body, cnts)
+        computeCntReachability(body, functions ::: cnts)
+      case LetC(continuations, body) => 
+        continuations.flatMap(c => computeCntReachability(c.body, cnts)) ::: computeCntReachability(body, cnts)
+      case AppF(name, retC, args) => {
+        cnts.find(c => c.name == name) match {
+          case None => List(name)
+          case Some(x) => name :: computeCntReachability(x.body, cnts.filter(_ != x))
+        }
+      }
+      case AppC(name, args) => args
+      case x => Nil
+    }
+    
+    val reachableFuns = computeFunReachability(tree, Nil)*/
     
     def shrinkT(tree: Tree)(implicit s: State): Tree = tree match {
       // Literals
@@ -125,12 +143,10 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
             case x => x
           }))
         }
-        
       // Same args reduce
       case LetP(name, prim, args, body) if sameArgReduce.contains(prim) && args(0) == args(1)  => {
         LetL(name, sameArgReduce.get(prim).get, shrinkT(body))
       }
-        
       // Left/Right absorbing/neutral
       case LetP(name, prim, args, body) if args.exists(a => s.lEnv.contains(a) &&
           (leftAbsorbing.contains((s.lEnv.get(a).get, prim)) || rightAbsorbing.contains((prim, s.lEnv.get(a).get))
@@ -157,6 +173,9 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         val value = vEvaluator((prim, args.map(a => s.lEnv.get(a).get)))
         LetL(name, value, shrinkT(body)(s.withLit(name, value)))
       }
+            
+      case LetP(name, prim, args, body) =>
+        LetP(name, prim, args, shrinkT(body)(s.withExp(name, prim, args)))
       
       // If
       case If(cond, args, thenC, elseC) if args.forall(a => s.lEnv.contains(a)) 
@@ -170,45 +189,98 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         }
       }
       
-      case LetF(functions, body) if functions.filterNot(x => reachableFuns.contains(x.name)).nonEmpty =>
-        LetF(functions.filter(reachableFuns.contains(_)).map(f => 
-          f.copy(body = shrinkT(f.body)(s.withEmptyInvEnvs))), shrinkT(body))
-      
       // Functions
       case LetF(functions, body) => {
-        functions.filter(f => {
-          functions.filter(_ != f).forall(f2 =>
-            !census(f2.body).contains(f.name) || census(body).contains(f.name)
-          )
-        }) match {
-          case Nil => shrinkT(body)
-          case x::xs => LetF((x::xs).map(f => f.copy(body = shrinkT(f.body)(s.withEmptyInvEnvs))), shrinkT(body))
+        // DCE
+        val fcts = functions.filterNot(f => s.dead(f.name))
+        
+        // η-reduction
+        def isEtaReduceable(f: FunDef): Boolean = f.body match {
+          case AppF(name, retC, args) => true
+          case _ => false
+        }
+        
+        val etaReduceMap = fcts.filter(isEtaReduceable(_)).map(f => f.body match {
+          case AppF(name, retC, args) => (f.name, name)
+        })
+        val notEtaReduceableFcts = fcts.filterNot(isEtaReduceable(_))
+        
+        val etaReducedFcts = notEtaReduceableFcts.map(f => f.copy(body = f.body.subst(PartialFunction[Name,Name] {
+          case x => etaReduceMap.find(e => e._1 == x) match {
+            case Some(entry) => entry._2
+            case None => x
+          }
+        }))).map(f => f.copy(args = f.args.map(arg => etaReduceMap.find(e => e._1 == arg) match {
+            case Some(entry) => entry._2
+            case None => arg
+        })))
+        
+        val bodySubst = body.subst(PartialFunction[Name, Name] {
+          case x => etaReduceMap.find(e => e._1 == x) match {
+            case Some(entry) => entry._2
+            case None => x
+          }
+        })
+        
+        etaReducedFcts match {
+          case Nil => shrinkT(bodySubst)
+          case x::xs => LetF(etaReducedFcts.map(f => 
+              f.copy(body = shrinkT(f.body)(s.withEmptyInvEnvs))), 
+            shrinkT(bodySubst))
         }
       }
       
       // Continuations
       case LetC(continuations, body) => {
-        val ctns = continuations.filterNot(c => s.dead(c.name))
+        // DCE
+        val cnts = continuations.filterNot(c => s.dead(c.name))
         
-        ctns.filter(c => {
-          ctns.filter(_ != c).forall(c2 =>
-            !census(c2.body).contains(c.name) || census(body).contains(c.name)
-          )
-        }) match {
-          case Nil => shrinkT(body)
-          case x::xs => LetC(ctns.map(x => CntDef(x.name, x.args, shrinkT(x.body))), shrinkT(body))
+        // η-reduction
+        def isEtaReduceable(c: CntDef): Boolean = c.body match {
+          case AppC(name, args) => true
+          case _ => false
+        }
+        
+        val etaReduceMap = cnts.filter(isEtaReduceable(_)).map(c => c.body match {
+          case AppC(name, args) => (c.name, name)
+        })
+        val notEtaReduceableCnts = cnts.filterNot(isEtaReduceable(_))
+        
+        val etaReducedCnts = notEtaReduceableCnts.map(c => c.copy(body = c.body.subst(PartialFunction[Name,Name] {
+          case x => etaReduceMap.find(e => e._1 == x) match {
+            case Some(entry) => entry._2
+            case None => x
+          }
+        }))).map(c => c.copy(args = c.args.map(arg => etaReduceMap.find(e => e._1 == arg) match {
+            case Some(entry) => entry._2
+            case None => arg
+        })))
+        
+        println("Map " + etaReduceMap + " Cts : " + etaReducedCnts)
+        printTree("Body", body)
+        
+        val bodySubst = body.subst(PartialFunction[Name, Name] {
+          case x => etaReduceMap.find(e => e._1 == x) match {
+            case Some(entry) => entry._2
+            case None => x
+          }
+        })
+        
+        etaReducedCnts match {
+          case Nil => shrinkT(bodySubst)
+          case x::xs => LetC(etaReducedCnts.map(x => 
+            CntDef(x.name, x.args, shrinkT(x.body))), 
+            shrinkT(bodySubst))
         }
       }
       
-      // Base cases 
-      
-      case LetP(name, prim, args, body) =>
-        LetP(name, prim, args, shrinkT(body)(s.withExp(name, prim, args)))
       case x =>
         x
     }
     
-    shrinkT(tree)(State(census(tree)))
+    val t = shrinkT(tree)(State(census(tree)))
+    printTree("Tree shrinked :", t)
+    t
   }
 
   // (Non-shrinking) inlining:
