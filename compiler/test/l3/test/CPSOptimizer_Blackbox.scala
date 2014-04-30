@@ -8,6 +8,4 @@ import l3.test.ok.AllOKTests
 class CPSOptimizer_Blackbox extends CPSOptTest with AllOKTests {
 
   val compileAndInterpret = (src: String) => testCPSLowProgramOutput(source = src)
-
-  // TODO: Add other specific tests here
 }

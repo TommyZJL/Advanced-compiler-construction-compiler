@@ -25,6 +25,7 @@ object CPSDataRepresenter extends (H.Tree => L.Tree) {
     case H.AppC(cont, args) => args
     case H.AppF(func, cont, args) => func :: args
     case H.If(prim, args, thenC, elseC) => args
+    case H.Halt => Nil
     case _ => ???
   }
 

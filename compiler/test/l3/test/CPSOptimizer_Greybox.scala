@@ -36,4 +36,7 @@ class CPSOptimizer_Greybox extends CPSOptTest {
   
   @Test def testFunInlining =
     testCPSBothSeq("(def f (fun (x) (@ char-print 'a'))) (f 1)", s => s.get(LetF) == 0)
+    
+  @Test def testNeutral =
+    testCPSBothSeq("(let ((a (@char-read))) (@char-print (@+ 0 a)))", s => s.get(LetL) == 2)
 }
