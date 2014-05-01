@@ -11,12 +11,11 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
   import treeModule._
 
   def apply(tree: Tree): Tree = {
-    printTree("Tree to optimize :", tree)
+    //printTree("Tree to optimize :", tree)
     val simplifiedTree = fixedPoint(tree)(shrink)
     val maxSize = (size(simplifiedTree) * 1.5).toInt
-    println("MAXXX SIZEEE : " + maxSize)
     val ft = fixedPoint(simplifiedTree, 8) { t => shrink(inline(t, maxSize)) }
-    printTree("Final Tree : ", ft)
+    //printTree("Final Tree : ", ft)
     ft
   }
   
@@ -71,7 +70,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
 
   // Shrinking optimizations:
   private def shrink(tree: Tree): Tree = {
-    printTree("Tree to shrink :", tree)
+    //printTree("Tree to shrink :", tree)
     
     def shrinkT(tree: Tree)(implicit s: State): Tree = tree match {
       // Literals
@@ -97,27 +96,33 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
           case x if x == name => s.eInvEnv.get((prim,args)).get
           case x => x
         }))
-      case LetP(name, prim, List(b, i), body) 
-        if (s.eInvEnv.map(x => (x._2, x._1)).get(b) match {
+      case LetP(name, prim, args @ List(b, i), body)
+        if isBlockGet(prim) && (s.eInvEnv.map(x => (x._2, x._1)).get(b) match {
           case Some(x) => isFixedBlockAlloc(x._1)
           case _ => false
-        }) && (s.eInvEnv.filter(x => x._1._1 == blockSet && x._1._2(0) == b && x._1._2(1) == i).size == 1) => {
-          val tuple = s.eInvEnv.filter(x => x._1._1 == blockSet && x._1._2(0) == b && x._1._2(1) == i).toList(0)
-          val v = tuple._1._2(2)
+        }) => {
+          s.eInvEnv.filter(x => x._1._1 == blockSet && x._1._2(0) == b && x._1._2(1) == i).toList match {
+            case x :: Nil =>
+              val v = x._1._2(2)
           
-          shrinkT(body.subst(PartialFunction[Name, Name] {
-            case x if x == name => v
-            case x => x
-          }))
+              shrinkT(body.subst(PartialFunction[Name, Name] {
+                case x if x == name => v
+                case x => x
+              }))
+            case _ => LetP(name, prim, args, shrinkT(body)(s.withExp(name, prim, args)))
+          }
         }
+        
       // Same args reduce
       case LetP(name, prim, args, body) if sameArgReduce.contains(prim) && args(0) == args(1)  => {
-        LetL(name, sameArgReduce.get(prim).get, shrinkT(body))
+        val value = sameArgReduce.get(prim).get
+        LetL(name, value, shrinkT(body)(s.withLit(name, value)))
       }
       // Left/Right absorbing/neutral
       case LetP(name, prim, args, body) if args.exists(a => s.lEnv.contains(a) &&
           (leftAbsorbing.contains((s.lEnv.get(a).get, prim)) || rightAbsorbing.contains((prim, s.lEnv.get(a).get))
               || leftNeutral.contains((s.lEnv.get(a).get, prim)) || rightNeutral.contains((prim, s.lEnv.get(a).get)))) => {
+        
         val value = args.filter(a => s.lEnv.contains(a) &&
           (leftAbsorbing.contains((s.lEnv.get(a).get, prim)) || rightAbsorbing.contains((prim, s.lEnv.get(a).get))
               || leftNeutral.contains((s.lEnv.get(a).get, prim)) || rightNeutral.contains((prim, s.lEnv.get(a).get))))
@@ -140,10 +145,30 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         val value = vEvaluator((prim, args.map(a => s.lEnv.get(a).get)))
         LetL(name, value, shrinkT(body)(s.withLit(name, value)))
       }
-            
-      case LetP(name, prim, args, body) =>
-        println("ENV for " + name + ": " + s.lEnv)
-        LetP(name, prim, args, shrinkT(body)(s.withExp(name, prim, args)))
+      
+      case LetP(name, prim, args, body) => prim match {
+        case x if isBlockLength(x) => 
+          s.eInvEnv.map(x => (x._2, x._1)).get(args(0)) match {
+            case Some(y) =>
+              shrinkT(body.subst(PartialFunction[Name, Name] {
+                case x if x == name => y._2(0)
+                case x => x
+              }))
+            case None => LetP(name, prim, args, shrinkT(body)(s.withExp(name, prim, args)))
+        }
+        case x if isBlockTag(x) => 
+          s.eInvEnv.map(x => (x._2, x._1)).get(args(0)) match {
+            case Some(x) =>
+              val fresh = Symbol.fresh("tag")
+              LetL(fresh,getBlockTag(x._1), shrinkT(body.subst(PartialFunction[Name, Name] {
+                case x if x == name => fresh
+                case x => x
+              }))(s.withLit(fresh, getBlockTag(x._1))))
+            case None => LetP(name, prim, args, shrinkT(body)(s.withExp(name, prim, args)))
+          }
+          
+        case x => LetP(name, prim, args, shrinkT(body)(s.withExp(name, prim, args)))
+      }
       
       // If
       case If(cond, args, thenC, elseC) if args.forall(a => s.lEnv.contains(a)) 
@@ -224,9 +249,6 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
             case None => arg
         })))
         
-        println("Map " + etaReduceMap + " Cts : " + etaReducedCnts)
-        printTree("Body", body)
-        
         val bodySubst = body.subst(PartialFunction[Name, Name] {
           case x => etaReduceMap.find(e => e._1 == x) match {
             case Some(entry) => entry._2
@@ -247,7 +269,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
     }
     
     val t = shrinkT(tree)(State(census(tree)))
-    printTree("Tree shrinked :", t)
+    //printTree("Tree shrinked :", t)
     t
   }
 
@@ -260,21 +282,30 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
       val funLimit = fibonacci(i)
       val cntLimit = i
       
+      def cntDefFreshNames(c: CntDef): Map[Name, Name] = freshNames(c.body, (
+            (Symbol.fresh("inlC"), c.name) ::
+            c.args.map(a => (Symbol.fresh("inlCA"), a))
+        ).foldLeft(Map[Name,Name]())(_ + _))
+      
+      def funDefFreshNames(f: FunDef): Map[Name, Name] = freshNames(f.body, (
+            (Symbol.fresh("inlF"), f.name) ::
+            (Symbol.fresh("inlFretC"), f.retC) ::
+            f.args.map(a => (Symbol.fresh("inlFA"), a))
+        ).foldLeft(Map[Name,Name]())(_ + _))
+      
       def freshNames(t: Tree, subst: Map[Name, Name]) : Map[Name, Name] = t match {
         case LetL(name, value, body) => freshNames(body, subst + (Symbol.fresh("inlL") -> name))
         case LetP(name, prim, args, body) => freshNames(body, subst + (Symbol.fresh("inlP") -> name))
         case LetC(continuations, body) => {
-          val freshMap = continuations.map(x => (Symbol.fresh("inlC"), x.name))
-          val ctnsFreshMaps = continuations.flatMap(c => c.args.map(a => (Symbol.fresh("inlCA"), a)))
-          
-          freshNames(body, (freshMap ::: ctnsFreshMaps).foldLeft(Map[Name,Name]())(_ + _))
+          val freshMap = continuations.foldLeft(Map[Name,Name]())(
+              (m, c) => m ++ cntDefFreshNames(c))
+          freshNames(body, freshMap)
         }
         case LetF(functions, body) => {
-          val freshMap = functions.map(x => (Symbol.fresh("inlF"), x.name))
-          val fctsFreshMaps = functions.flatMap(f => 
-            (Symbol.fresh("inlFretC"), f.retC) :: f.args.map(a => (Symbol.fresh("inlFA"), a)))
-          
-          freshNames(body, (freshMap ::: fctsFreshMaps).foldLeft(Map[Name,Name]())(_ + _))
+          val freshMap = functions.foldLeft(Map[Name,Name]())(
+              (m, f) => m ++ funDefFreshNames(f))
+              
+          freshNames(body, freshMap)
         }
         case _ => Map[Name,Name]()
       }
@@ -307,10 +338,16 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         
         case AppC(name, args) if s.cEnv.contains(name) => {
           val cntDef = s.cEnv.get(name).get
+          val freshNamesMap = freshNames(cntDef.body, Map[Name, Name]())
           
-          val freshNames 
+          val freshBody = cntDef.body.subst(PartialFunction[Name, Name] {
+            case x => freshNamesMap.get(x) match {
+              case Some(n) => n
+              case None => x
+            }
+          })
           
-          inlineT(cntDef.body.subst(PartialFunction[Name, Name] {
+          inlineT(freshBody.subst(PartialFunction[Name, Name] {
             case x if cntDef.args.contains(x) => args(cntDef.args.indexOf(x))
             case x => x
           }))
@@ -333,11 +370,19 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
           
         
         case AppF(name, retC, args) if s.fEnv.contains(name) => {
-          val fun = s.fEnv.get(name).get
+          val funDef = s.fEnv.get(name).get
+          val freshNamesMap = freshNames(funDef.body, Map[Name, Name]())
           
-          inlineT(fun.body.subst(PartialFunction[Name, Name] {
-            case x if x == fun.retC => retC
-            case x if fun.args.contains(x) => args(fun.args.indexOf(x))
+          val freshBody = funDef.body.subst(PartialFunction[Name, Name] {
+            case x => freshNamesMap.get(x) match {
+              case Some(n) => n
+              case None => x
+            }
+          })
+          
+          inlineT(freshBody.subst(PartialFunction[Name, Name] {
+            case x if x == funDef.retC => retC
+            case x if funDef.args.contains(x) => args(funDef.args.indexOf(x))
             case x => x
           }))
         }
@@ -352,9 +397,9 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
     }
 
     val tr = (trees takeWhile { case (_, tree) => size(tree) <= maxSize }).last._2
-    printTree("Inlined tree :", tr)
+    /*printTree("Inlined tree :", tr)
     println("inline tree last size " + size(trees.last._2))
-    printTree("Inlined tree last :", trees.last._2)
+    printTree("Inlined tree last :", trees.last._2)*/
     tr
   }
 
@@ -410,6 +455,13 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
   protected def isStable(prim: ValuePrimitive): Boolean
   
   protected def blockSet(): ValuePrimitive
+  
+  protected def isBlockGet(v: ValuePrimitive): Boolean
+  protected def isBlockLength(v: ValuePrimitive): Boolean
+  protected def isBlockTag(v: ValuePrimitive): Boolean
+  
+  protected def getBlockTag(v: ValuePrimitive): Literal
+  
   protected def isFixedBlockAlloc(prim: ValuePrimitive): Boolean
   protected def hasBorderEffect(prim: ValuePrimitive): Boolean
   
@@ -442,6 +494,15 @@ object CPSOptimizerHigh extends CPSOptimizer(SymbolicCPSTreeModule)
   }
   
   protected def blockSet: ValuePrimitive = L3BlockSet
+  
+  protected def isBlockGet(v: ValuePrimitive): Boolean = (v == L3BlockGet)
+  protected def isBlockLength(v: ValuePrimitive): Boolean = (v == L3BlockLength)
+  protected def isBlockTag(v: ValuePrimitive): Boolean = (v == L3BlockTag)
+  
+  protected def getBlockTag(v: ValuePrimitive): Literal = v match {
+    case L3BlockAlloc(x) => IntLit(x)
+    case _ => ???
+  }
   
   protected def isFixedBlockAlloc(prim: ValuePrimitive): Boolean = prim match {
     case L3BlockAlloc(x) if x == 202 => true
@@ -515,6 +576,15 @@ object CPSOptimizerLow extends CPSOptimizer(SymbolicCPSTreeModuleLow)
   }
   
   protected def blockSet: ValuePrimitive = CPSBlockSet
+  
+  protected def isBlockGet(v: ValuePrimitive): Boolean = (v == CPSBlockGet)
+  protected def isBlockLength(v: ValuePrimitive): Boolean = (v == CPSBlockSize)
+  protected def isBlockTag(v: ValuePrimitive): Boolean = (v == CPSBlockTag)
+  
+  protected def getBlockTag(v: ValuePrimitive): Literal = v match {
+    case CPSBlockAlloc(x) => x
+    case _ => ???
+  }
   
   protected def isFixedBlockAlloc(prim: ValuePrimitive): Boolean = prim match {
     case CPSBlockAlloc(x) if x == 202 => true
