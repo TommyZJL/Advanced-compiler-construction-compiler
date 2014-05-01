@@ -41,6 +41,6 @@ class CPSOptimizer_Greybox extends CPSOptTest {
     testCPSBothSeq("(let ((a (@char-read))) (@char-print (@+ 0 a)))", s => s.get(LetL) == 2)
     
   @Test def testInliningConstantFoldingDCE =
-    testCPSBothSeq("(let* ((a 1) (b 2) (c (@ + a b))) (@ char-print 'a'))", s => false)
+    testCPSBothSeq("(let* ((a 1) (b 2) (c (@ + a b))) (@ char-print 'a'))", s => s.get(LetL) == 1)
     
 }

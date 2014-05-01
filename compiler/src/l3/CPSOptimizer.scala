@@ -14,6 +14,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
     printTree("Tree to optimize :", tree)
     val simplifiedTree = fixedPoint(tree)(shrink)
     val maxSize = (size(simplifiedTree) * 1.5).toInt
+    println("MAXXX SIZEEE : " + maxSize)
     val ft = fixedPoint(simplifiedTree, 8) { t => shrink(inline(t, maxSize)) }
     printTree("Final Tree : ", ft)
     ft
@@ -71,40 +72,6 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
   // Shrinking optimizations:
   private def shrink(tree: Tree): Tree = {
     printTree("Tree to shrink :", tree)
-    /*def computeFunReachability(tree: Tree, funs: List[FunDef]): List[Name] = tree match {
-      case LetL(name, value, body) => computeFunReachability(body, funs)
-      case LetP(name, prim, args, body) => args ::: computeFunReachability(body, funs)
-      case LetF(functions, body) => computeFunReachability(body, functions ::: funs)
-      case LetC(continuations, body) => continuations.flatMap(c => computeFunReachability(c.body, funs)) ::: computeFunReachability(body, funs)
-      case AppF(name, retC, args) => {
-        funs.find(f => f.name == name) match {
-          case None => List(name)
-          case Some(x) => name :: computeFunReachability(x.body, funs.filter(_ != x))
-        }
-      }
-      case AppC(name, args) => args
-      case x => Nil
-    }
-    
-    def computeCntReachability(tree: Tree, cnts: List[CntDef]): List[Name] = tree match {
-      case LetL(name, value, body) => computeCntReachability(body, cnts)
-      case LetP(name, prim, args, body) => args ::: computeCntReachability(body, cnts)
-      case LetF(functions, body) => 
-        functions.flatMap(f => computeCntReachability(f.body, cnts)) ::: computeCntReachability(body, cnts)
-        computeCntReachability(body, functions ::: cnts)
-      case LetC(continuations, body) => 
-        continuations.flatMap(c => computeCntReachability(c.body, cnts)) ::: computeCntReachability(body, cnts)
-      case AppF(name, retC, args) => {
-        cnts.find(c => c.name == name) match {
-          case None => List(name)
-          case Some(x) => name :: computeCntReachability(x.body, cnts.filter(_ != x))
-        }
-      }
-      case AppC(name, args) => args
-      case x => Nil
-    }
-    
-    val reachableFuns = computeFunReachability(tree, Nil)*/
     
     def shrinkT(tree: Tree)(implicit s: State): Tree = tree match {
       // Literals
@@ -114,7 +81,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         shrinkT(body.subst(PartialFunction[Name, Name] {
           case x if x == name => s.lInvEnv.get(value).get
           case x => x
-        }))//(s.withSubst(name, s.lInvEnv.get(value).get))
+        }))
       
       case LetL(name, value, body) =>
         LetL(name, value, shrinkT(body)(s.withLit(name, value)))
@@ -175,6 +142,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
       }
             
       case LetP(name, prim, args, body) =>
+        println("ENV for " + name + ": " + s.lEnv)
         LetP(name, prim, args, shrinkT(body)(s.withExp(name, prim, args)))
       
       // If
@@ -196,11 +164,11 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         
         // η-reduction
         def isEtaReduceable(f: FunDef): Boolean = f.body match {
-          case AppF(name, retC, args) => true
+          case AppF(name, retC, args) => (args == f.args)
           case _ => false
         }
         
-        val etaReduceMap = fcts.filter(isEtaReduceable(_)).map(f => f.body match {
+        val etaReduceMap = fcts.filter(isEtaReduceable(_)).map(f => (f.body: @unchecked) match {
           case AppF(name, retC, args) => (f.name, name)
         })
         val notEtaReduceableFcts = fcts.filterNot(isEtaReduceable(_))
@@ -237,11 +205,11 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         
         // η-reduction
         def isEtaReduceable(c: CntDef): Boolean = c.body match {
-          case AppC(name, args) => true
+          case AppC(name, args) => (args == c.args)
           case _ => false
         }
         
-        val etaReduceMap = cnts.filter(isEtaReduceable(_)).map(c => c.body match {
+        val etaReduceMap = cnts.filter(isEtaReduceable(_)).map(c => (c.body: @unchecked) match {
           case AppC(name, args) => (c.name, name)
         })
         val notEtaReduceableCnts = cnts.filterNot(isEtaReduceable(_))
@@ -292,8 +260,24 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
       val funLimit = fibonacci(i)
       val cntLimit = i
       
-      var funCount = 0
-      var cntCount = 0
+      def freshNames(t: Tree, subst: Map[Name, Name]) : Map[Name, Name] = t match {
+        case LetL(name, value, body) => freshNames(body, subst + (Symbol.fresh("inlL") -> name))
+        case LetP(name, prim, args, body) => freshNames(body, subst + (Symbol.fresh("inlP") -> name))
+        case LetC(continuations, body) => {
+          val freshMap = continuations.map(x => (Symbol.fresh("inlC"), x.name))
+          val ctnsFreshMaps = continuations.flatMap(c => c.args.map(a => (Symbol.fresh("inlCA"), a)))
+          
+          freshNames(body, (freshMap ::: ctnsFreshMaps).foldLeft(Map[Name,Name]())(_ + _))
+        }
+        case LetF(functions, body) => {
+          val freshMap = functions.map(x => (Symbol.fresh("inlF"), x.name))
+          val fctsFreshMaps = functions.flatMap(f => 
+            (Symbol.fresh("inlFretC"), f.retC) :: f.args.map(a => (Symbol.fresh("inlFA"), a)))
+          
+          freshNames(body, (freshMap ::: fctsFreshMaps).foldLeft(Map[Name,Name]())(_ + _))
+        }
+        case _ => Map[Name,Name]()
+      }
       
       //printTree("Tree to inline :", tree)
       
@@ -303,41 +287,41 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
         case LetP(name, prim, args, body) =>
           LetP(name, prim, args, inlineT(body))
         
-        case LetC(continuations, body) if cntCount <= cntLimit => {
+        case LetC(continuations, body) if size(tree) <= cntLimit => {
           def isInlineable(c: CntDef): Boolean = 
             s.appliedOnce(c.name) && continuations.forall(c2 => {
               census(c2.body).getOrElse(c.name, 0) == 0
             })
-            
+          
           val continuationsToInline = continuations.filter(isInlineable(_))
           
-          cntCount += 1
-          
+          val state = s.withCnts(continuationsToInline)
+
           LetC(continuations.filterNot(isInlineable(_)).map(c => 
-            c.copy(body = inlineT(c.body)(s.withCnts(continuationsToInline)))), 
-                inlineT(body)(s.withCnts(continuationsToInline)))
+            c.copy(body = inlineT(c.body)(state))), 
+            inlineT(body)(state))
         }
         
         case LetC(continuations, body) =>
-          LetC(continuations.map(c => c.copy(body = inlineT(c.body)(s.withCnts(continuations)))), inlineT(body)(s.withCnts(continuations)))
+          LetC(continuations.map(c => c.copy(body = inlineT(c.body))), inlineT(body))
         
         case AppC(name, args) if s.cEnv.contains(name) => {
           val cntDef = s.cEnv.get(name).get
+          
+          val freshNames 
           
           inlineT(cntDef.body.subst(PartialFunction[Name, Name] {
             case x if cntDef.args.contains(x) => args(cntDef.args.indexOf(x))
             case x => x
           }))
         }
-        case LetF(functions, body) if funCount < funLimit => {
+        case LetF(functions, body) if size(tree) < funLimit => {
           def isInlineable(f: FunDef): Boolean = 
             s.appliedOnce(f.name) && functions.forall(f2 => {
               census(f2.body).getOrElse(f.name, 0) == 0
             })
             
           val functionsToInline = functions.filter(isInlineable(_))
-          
-          funCount += 1
           
           LetF(functions.filterNot(isInlineable(_)).map(f => 
             f.copy(body = inlineT(f.body)(s.withFuns(functionsToInline)))),
@@ -364,11 +348,14 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
       
       val ret = inlineT(tree)(State(census(tree)))
       
-      //printTree("Inlined tree :", ret)
       (i + 1, ret)
     }
 
-    (trees takeWhile { case (_, tree) => size(tree) <= maxSize }).last._2
+    val tr = (trees takeWhile { case (_, tree) => size(tree) <= maxSize }).last._2
+    printTree("Inlined tree :", tr)
+    println("inline tree last size " + size(trees.last._2))
+    printTree("Inlined tree last :", trees.last._2)
+    tr
   }
 
   // Census computation, counts how many times each symbol is used
