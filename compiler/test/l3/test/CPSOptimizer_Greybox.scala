@@ -34,6 +34,10 @@ class CPSOptimizer_Greybox extends CPSOptTest {
   @Test def testConstantFoldingDiv =
     testCPSBothPar("(@ / 2 1)", stats => stats.get(LetP) == 0)
   
+  @Test def testConstantFoldingAnd =
+    testCPSBothPar("(if (@ & #f #t) (@char-print 'a') (@char-print 'b'))", stats => false)
+  
+  
   @Test def testFunInlining =
     testCPSBothSeq("(def f (fun (x) (@ char-print 'a'))) (f 1)", s => s.get(LetF) == 0)
     

@@ -280,7 +280,7 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
 
     val trees = Stream.iterate((0, tree), fibonacci.length) { case (i, tree) =>
       val funLimit = fibonacci(i)
-      val cntLimit = i
+      val cntLimit = 2*i
       
       def cntDefFreshNames(c: CntDef): Map[Name, Name] = freshNames(c.body, (
             (Symbol.fresh("inlC"), c.name) ::
@@ -392,14 +392,12 @@ abstract class CPSOptimizer[T <: CPSTreeModule { type Name = Symbol }]
       }
       
       val ret = inlineT(tree)(State(census(tree)))
-      
+      //printTree("Inlined tree :", ret)
       (i + 1, ret)
     }
 
     val tr = (trees takeWhile { case (_, tree) => size(tree) <= maxSize }).last._2
-    /*printTree("Inlined tree :", tr)
-    println("inline tree last size " + size(trees.last._2))
-    printTree("Inlined tree last :", trees.last._2)*/
+    //printTree("Inlined tree :", tr)
     tr
   }
 
